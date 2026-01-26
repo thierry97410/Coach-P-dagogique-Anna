@@ -160,7 +160,6 @@ with col_droite:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
     # --- LISTE DES OUTILS ---
-    # J'ai rajouté l'option MIX TOUT en premier
     liste_options_outils = [
         "🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)",
         "📺 Vidéo (YouTube/Lumni)", 
@@ -169,15 +168,15 @@ with col_droite:
         "🎲 Jeu/Manip"
     ]
     
+    # MODIFICATION ICI : Default réglé sur "Mix Tout"
     outils_choisis = st.multiselect(
         "Boîte à outils (Coche ce que tu veux utiliser) :",
         liste_options_outils,
-        default=["📺 Vidéo (YouTube/Lumni)"],
+        default=["🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)"], 
         placeholder="Ajoute des outils..."
     )
 
     # --- 5. LOGIQUE MIX TOUT ---
-    # Si l'utilisateur a coché "Mix Tout", on ignore le reste et on force TOUT
     instruction_outils = ""
     if any("Mix Tout" in outil for outil in outils_choisis):
         instruction_outils = "UTILISE TOUS LES OUTILS DISPONIBLES : Vidéo, iPad, Papier, Jeu."
