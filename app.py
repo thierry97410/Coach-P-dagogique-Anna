@@ -13,14 +13,12 @@ st.markdown("""
     .stApp { background-color: #e8f4f8; }
     h1, h2, h3 { color: #34495e; font-family: 'Helvetica', sans-serif; }
     
-    /* Boutons standards */
     div.stButton > button {
         background-color: #a8e6cf; color: #2c3e50; border: none; border-radius: 12px;
         padding: 10px 25px; font-weight: bold; transition: all 0.3s ease;
     }
     div.stButton > button:hover { background-color: #88d8b0; color: white; transform: scale(1.02); }
     
-    /* Bouton Réinitialiser */
     button[kind="secondary"] {
         background-color: #fadbd8; color: #c0392b; border: 1px solid #e6b0aa;
     }
@@ -149,12 +147,10 @@ with col_droite:
 
     c1, c2 = st.columns(2)
     with c1:
-        # MODIFICATION : Placeholder explicite
         sujet = st.text_input("Sujet ?", placeholder="Laisse vide pour la SUITE logique...")
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
-    # --- LISTE OUTILS ---
     liste_options_outils = [
         "🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)",
         "📺 Vidéo (YouTube/Lumni)", 
@@ -171,7 +167,6 @@ with col_droite:
     )
 
     # --- LOGIQUE INTELLIGENTE SUJET ---
-    # Si le sujet est vide MAIS qu'on a une progression -> On active le mode SUITE automatiquement
     final_subject = sujet
     mode_auto = False
     
@@ -180,43 +175,48 @@ with col_droite:
             final_subject = "SUITE"
             mode_auto = True
 
-    # --- 5. LOGIQUE MIX TOUT ---
+    # --- LOGIQUE MIX TOUT ---
     instruction_outils = ""
     if any("Mix Tout" in outil for outil in outils_choisis):
-        instruction_outils = "UTILISE TOUS LES OUTILS DISPONIBLES : Vidéo, iPad, Papier, Jeu."
+        instruction_outils = "UTILISE TOUS LES OUTILS DISPONIBLES."
     else:
         instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
 
-    # --- 6. PROMPT ---
+    # --- 6. PROMPT SÉCURISÉ ---
     system_prompt = f"""
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
-    CONTEXTE TECHNIQUE :
-    - Fiche statique. PAS DE QUESTIONS. CONSIGNES D'ACTION UNIQUEMENT.
-
+    CONTEXTE : Fiche statique. PAS DE QUESTIONS.
     DONNÉES :
-    1. PROGRESSION : {progression_context if progression_context else "Non spécifiée"}
-    2. BIBLIOTHÈQUE : {biblio_text}
-    3. DOCUMENT DU JOUR : {user_pdf_content}
+    - Progression : {progression_context if progression_context else "Non spécifiée"}
+    - Bibliothèque : {biblio_text}
+    - Document : {user_pdf_content}
     
-    RÈGLES OUTILS :
+    RÈGLES OUTILS & SÉCURITÉ (Whitelist) :
     - {instruction_outils}
-    - Si Vidéo : Lien URL cliquable OBLIGATOIRE.
+    
+    🛑 SÉCURITÉ DES LIENS VIDÉO (OBLIGATOIRE) :
+    - Ne génère JAMAIS de lien vidéo direct (risque de lien mort).
+    - Génère UNIQUEMENT des liens de RECHERCHE YouTube (`https://www.youtube.com/results?search_query=...`).
+    - **TU DOIS AJOUTER UNE CHAINE FIABLE DANS LA RECHERCHE** selon la matière :
+        * Maths -> Ajoute "Yvan Monka" ou "Les Bons Profs"
+        * Français/Histoire/Géo -> Ajoute "Lumni" ou "Les Bons Profs"
+        * Sciences -> Ajoute "Lumni" ou "C'est pas Sorcier"
+    - Exemple valide : `https://www.youtube.com/results?search_query=Théorème+Thalès+Yvan+Monka`
     
     RÈGLES PÉDAGO :
     - Si "SUITE" : Chapitre suivant logique.
     - ZÉRO PRESSION : Mots bannis (Brevet, Notes, Examen).
-    - TON : Encourangeant, calme, liens avec la Réunion.
+    - TON : Encourangeant, clair, Réunion (très subtil/lèger).
     
     STRUCTURE :
     1. 👋 Check-Up.
     2. 🥑 Accroche Fun.
-    3. ⏱️ La Mission (Activités variées).
+    3. ⏱️ La Mission (Activités).
     4. ✨ Défi Créatif.
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
-        # Vérification intelligente
         if not final_subject and not user_pdf:
             st.warning("⚠️ Indique un sujet, ou sélectionne une matière à gauche pour que je propose la suite !")
         else:
