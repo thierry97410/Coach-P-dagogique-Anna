@@ -7,71 +7,32 @@ import pandas as pd
 # --- 1. CONFIGURATION & DESIGN ---
 st.set_page_config(page_title="Le Labo d'Anna", page_icon="🌿", layout="wide")
 
-# CSS : Couleurs Pastel & Design Doux (Ambiance Spa/Studieuse)
+# CSS : Couleurs Pastel & Design Doux
 st.markdown("""
 <style>
-    /* Fond Général (Bleu Glacier très pâle) */
-    .stApp {
-        background-color: #e8f4f8;
-    }
-
-    /* Titres (Bleu nuit doux) */
-    h1, h2, h3 {
-        color: #34495e;
-        font-family: 'Helvetica', sans-serif;
-    }
-
-    /* Boutons (Vert Menthe Pastel) */
+    .stApp { background-color: #e8f4f8; }
+    h1, h2, h3 { color: #34495e; font-family: 'Helvetica', sans-serif; }
     div.stButton > button {
-        background-color: #a8e6cf;
-        color: #2c3e50;
-        border: none;
-        border-radius: 12px;
-        padding: 10px 25px;
-        font-weight: bold;
-        transition: all 0.3s ease;
+        background-color: #a8e6cf; color: #2c3e50; border: none; border-radius: 12px;
+        padding: 10px 25px; font-weight: bold; transition: all 0.3s ease;
     }
-    div.stButton > button:hover {
-        background-color: #88d8b0;
-        color: white;
-        transform: scale(1.02);
-    }
-
-    /* Zones d'info (Bleu ciel pastel) */
-    .stAlert {
-        background-color: #d6eaf8;
-        color: #2c3e50;
-        border: 1px solid #aed6f1;
-        border-radius: 10px;
-    }
-    
-    /* Expander (Menu déroulant) - Fond blanc pour lisibilité */
-    .streamlit-expanderHeader {
-        background-color: white;
-        border-radius: 5px;
-        color: #2c3e50;
-    }
-    
-    /* Inputs (Champs texte) */
-    .stTextInput > div > div > input {
-        border-radius: 10px;
-    }
+    div.stButton > button:hover { background-color: #88d8b0; color: white; transform: scale(1.02); }
+    .stAlert { background-color: #d6eaf8; color: #2c3e50; border: 1px solid #aed6f1; border-radius: 10px; }
+    .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
+    .stTextInput > div > div > input { border-radius: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# Récupération de la clé API
+# API Key
 api_key = st.secrets.get("GOOGLE_API_KEY")
 if not api_key:
     st.error("Clé API manquante.")
     st.stop()
 
 genai.configure(api_key=api_key)
-
-# --- LE CŒUR DU RÉACTEUR (Mis à jour avec TA version disponible) ---
-# On utilise explicitement le modèle que tu as trouvé dans la liste
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
-# --- 2. FONCTIONS TECHNIQUES ---
+# --- 2. FONCTIONS ---
 def extract_pdf_text(file_path_or_buffer):
     try:
         pdf_reader = pypdf.PdfReader(file_path_or_buffer)
@@ -82,7 +43,6 @@ def extract_pdf_text(file_path_or_buffer):
     except: return ""
 
 def load_bibliotheque_content(folder_name):
-    """Charge le savoir (PDFs)"""
     content = ""
     if os.path.exists(folder_name):
         for filename in os.listdir(folder_name):
@@ -90,11 +50,10 @@ def load_bibliotheque_content(folder_name):
                 path = os.path.join(folder_name, filename)
                 with open(path, "rb") as f:
                     text = extract_pdf_text(f)
-                    if text: content += f"\nSOURCE ({filename}): {text[:30000]}" # On augmente la mémoire car le 2.5 est puissant
+                    if text: content += f"\nSOURCE ({filename}): {text[:30000]}"
     return content
 
 def load_programme_csv(folder_name):
-    """Charge la structure (CSV)"""
     path = os.path.join(folder_name, "programme.csv")
     if os.path.exists(path):
         try:
@@ -115,7 +74,6 @@ def create_download_link(content):
             a {{ color: #e74c3c; font-weight: bold; text-decoration: none; border-bottom: 2px solid #fadbd8; transition: all 0.2s; }}
             a:hover {{ background-color: #fadbd8; color: #c0392b; }}
             li {{ margin-bottom: 10px; }}
-            strong {{ color: #2980b9; }}
         </style>
     </head>
     <body>
@@ -128,7 +86,7 @@ def create_download_link(content):
     """
     return html.encode('utf-8')
 
-# --- 3. CHARGEMENT DONNÉES ---
+# --- 3. DONNÉES ---
 biblio_text = load_bibliotheque_content("bibliotheque")
 df_programme = load_programme_csv("bibliotheque")
 
@@ -138,12 +96,11 @@ st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
 
 col_gauche, col_droite = st.columns([1, 2])
 
-# --- GAUCHE : PROGRESSION ---
-progression_context = ""
 with col_gauche:
     st.info("### 📍 Progression")
     if df_programme is not None and not df_programme.empty:
         matieres = df_programme['Matiere'].unique()
+        progression_context = ""
         for matiere in matieres:
             chapitres = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
             options = ["(Rien commencé)"] + chapitres
@@ -155,7 +112,6 @@ with col_gauche:
     else:
         st.warning("⚠️ Fichier 'programme.csv' introuvable.")
 
-# --- DROITE : ACTION ---
 with col_droite:
     st.markdown("### ✨ Préparer la séance")
     
@@ -173,34 +129,39 @@ with col_droite:
 
     outil_pref = st.radio("Outil ?", ["🎲 Surprise", "📺 Vidéo", "📱 iPad"], horizontal=True)
 
-    # --- 5. PROMPT ---
+    # --- 5. PROMPT CORRIGÉ (MODE SENS UNIQUE) ---
     system_prompt = f"""
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
-    Tu t'adresses DIRECTEMENT à elle.
     
+    CONTEXTE TECHNIQUE (TRÈS IMPORTANT) :
+    - Tu génères une "Fiche de séance" statique que Anna va lire.
+    - **ELLE NE PEUT PAS TE RÉPONDRE.** L'interface ne permet pas d'écrire de réponse.
+    - **INTERDICTION** de poser des questions directes attendant une réponse ("Dis-moi ce que tu penses", "Quelle est la réponse ?").
+    - **REMPLACE PAR** des consignes d'action autonomes : "Réfléchis à...", "Note sur ton iPad...", "Dis à voix haute...", "Essaie de deviner avant de lire la suite".
+
     DONNÉES :
     1. PROGRESSION : {progression_context}
     2. BIBLIOTHÈQUE : {biblio_text}
     3. DOCUMENT DU JOUR : {user_pdf_content}
     
-    RÈGLES :
+    RÈGLES PÉDAGO :
     - Si "SUITE" : Trouve le chapitre suivant logique.
     - ZÉRO PRESSION : Mots bannis (Brevet, Notes, Examen).
     - TON : Encourangeant, calme, liens avec la Réunion.
     - LIENS : URL Vidéos cliquables OBLIGATOIRES (YouTube/Lumni).
     
-    STRUCTURE :
+    STRUCTURE DE LA FICHE :
     1. 👋 Check-Up ("On avance bien sur...")
-    2. 🥑 Accroche Fun.
-    3. ⏱️ Mission (Activités).
-    4. ✨ Défi Créatif.
+    2. 🥑 Accroche Fun (Sans question directe).
+    3. ⏱️ Mission (Activités à faire sur l'iPad ou regarder).
+    4. ✨ Défi Créatif (Une production à faire sur son iPad de son côté).
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
         if not sujet and not user_pdf:
             st.warning("Il me faut un sujet (ou tape 'SUITE') !")
         else:
-            with st.spinner("Gemini 2.5 analyse le programme..."):
+            with st.spinner("Gemini 2.5 prépare la feuille de route..."):
                 try:
                     requete = f"Sujet: {sujet}. Mood: {humeur}. Outil: {outil_pref}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
