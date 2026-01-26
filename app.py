@@ -50,7 +50,7 @@ def extract_pdf_text(file_path_or_buffer):
         return text
     except: return ""
 
-@st.cache_data # <--- LE TURBO : Garde en mémoire le contenu de la bibliothèque
+@st.cache_data # <--- LE TURBO (Ne change pas)
 def load_bibliotheque_content(folder_name):
     content = ""
     if os.path.exists(folder_name):
@@ -62,7 +62,7 @@ def load_bibliotheque_content(folder_name):
                     if text: content += f"\nSOURCE ({filename}): {text[:30000]}"
     return content
 
-@st.cache_data # <--- LE TURBO : Garde en mémoire le programme CSV
+@st.cache_data # <--- LE TURBO (Ne change pas)
 def load_programme_csv(folder_name):
     path = os.path.join(folder_name, "programme.csv")
     if os.path.exists(path):
@@ -112,10 +112,11 @@ with col_header_1:
     st.title("🇷🇪 Le Labo d'Anna")
     st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
 with col_header_2:
+    # --- CORRECTION ICI ---
     if st.button("🔄 Nouvelle Fiche", type="secondary"):
-        # On vide le cache si besoin lors du reset, ou juste rerun
-        st.cache_data.clear()
-        st.rerun()
+        st.session_state.clear() # On vide juste les formulaires
+        st.rerun() # On relance SANS vider le cache PDF
+    # ----------------------
 
 col_gauche, col_droite = st.columns([1, 2])
 
@@ -189,7 +190,7 @@ with col_droite:
     else:
         instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
 
-    # --- 6. PROMPT FINAL (Quiz + Sécurité + Fun) ---
+    # --- 6. PROMPT FINAL ---
     system_prompt = f"""
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
@@ -230,7 +231,6 @@ with col_droite:
                     requete = f"Sujet: {final_subject}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
                     
-                    # 🎉 LA CÉLÉBRATION (BALLONS)
                     st.balloons()
                     
                     st.markdown("---")
