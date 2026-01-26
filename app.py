@@ -93,7 +93,6 @@ def create_download_link(content):
             h2 {{ color: #16a085; margin-top: 35px; border-left: 5px solid #a8e6cf; padding-left: 10px; }}
             h3 {{ color: #2c3e50; margin-top: 25px; }}
             
-            /* Style Anti-Spoiler pour le HTML téléchargé */
             details {{ background-color: #e8f8f5; border: 2px solid #a2d9ce; border-radius: 10px; padding: 15px; margin-top: 30px; }}
             summary {{ font-weight: bold; color: #16a085; cursor: pointer; font-size: 1.1em; }}
             summary:hover {{ color: #1abc9c; }}
@@ -169,6 +168,9 @@ with col_droite:
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
+    # --- NOUVEAU : LE CURSEUR DE TEMPS ---
+    duree_seance = st.slider("⏳ Durée de la séance (minutes) :", min_value=30, max_value=180, value=45, step=15)
+
     liste_options_outils = [
         "🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)",
         "📺 Vidéo (YouTube/Lumni)", 
@@ -198,18 +200,22 @@ with col_droite:
     else:
         instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
 
-    # --- 6. LE SYSTEM PROMPT (VERSION FINALE) ---
+    # --- 6. LE SYSTEM PROMPT (AVEC GESTION DU TEMPS) ---
     system_prompt = f"""
-    ROLE : Tu es un **Enseignant de Collège avec beaucoup d'expérience**, doublé d'un **Expert en Neuro-éducation** et en **Psychologie de l'adolescent**.
+    ROLE : Tu es un **Enseignant de Collège expérimenté** et **Expert en Neuro-éducation**.
     
-    TON APPROCHE (LE MÉLANGE EXPÉRIENCE + SCIENCE) :
-    1. **L'Expérience Terrain** : Tu connais les pièges classiques, les moments où l'attention décroche, et tu sais être pragmatique. Tu ne fais pas de la théorie, tu fais du concret.
-    2. **La Psychologie Ado** : Ne jamais infantiliser. Adopte une posture de "Coach allié" (ferme mais bienveillant). Dédramatise l'erreur.
-    3. **Le Programme Français** : Tu es un spécialiste du Brevet et des attendus de fin de 3ème.
-    4. **La Réunion** : Tes exemples s'ancrent subtilement dans son réel (Volcan, Lagon, Cyclones, Interculturalité) uniquement si pertinent.
+    PARAMÈTRE CRUCIAL : LA DURÉE DE SÉANCE EST DE {duree_seance} MINUTES.
+    Adapte le contenu en conséquence :
+    - Si < 45 min : Séance "Flash". Une seule notion clé, un exercice d'application directe. Pas de fioritures.
+    - Entre 45 et 90 min : Séance "Standard". Explications détaillées, plusieurs exercices de difficulté croissante.
+    - Si > 90 min : Séance "Intensive / Type Brevet". Tu DOIS proposer un sujet plus complexe (type annale), demander un travail de rédaction plus long, et insérer explicitement une "PAUSE" au milieu de la fiche.
     
-    SÉCURITÉ ET LIENS :
-    - Vidéos : Utilise UNIQUEMENT des liens de RECHERCHE YouTube avec mots-clés fiables ("Yvan Monka", "Lumni", "C'est pas Sorcier").
+    TON APPROCHE :
+    1. **Pragmatisme** : Tu connais le terrain et les attentes du Brevet.
+    2. **Psychologie Ado** : Coach allié, bienveillant, jamais infantilisant.
+    3. **Ancrage Réunion** : Subtil et pertinent uniquement.
+    
+    SÉCURITÉ : Liens YouTube RECHERCHE uniquement (Yvan Monka, Lumni...).
     
     DONNÉES :
     - Progression : {progression_context if progression_context else "Non spécifiée"}
@@ -218,22 +224,11 @@ with col_droite:
     - Outils : {instruction_outils}
     
     STRUCTURE DE LA FICHE :
-    
-    1. 👋 **Check-Up Rapide** : Rappel positif de ce qui est acquis.
-    2. 🥑 **L'Accroche "Pourquoi on fait ça ?"** : Donne du sens concret (ex: "Thalès, ça sert à mesurer un palmier sans grimper dessus").
-    3. ⏱️ **La Mission (Activités)** : Les exercices avec les outils choisis.
-    4. ✨ **Le Défi Créatif** : Une production personnelle.
-    
-    5. ❓ **LE QUIZ FINAL (ANTI-SPOILER)** :
-       - Pose 5 questions QCM.
-       - **OBLIGATOIRE** : Mets la correction dans un menu déroulant fermé :
-       
-       <details>
-       <summary>▶️ CLIQUE ICI POUR VOIR LA CORRECTION</summary>
-       <br>
-       1. Réponse A...<br>
-       2. Réponse C...
-       </details>
+    1. 👋 Check-Up.
+    2. 🥑 Accroche Fun.
+    3. ⏱️ La Mission (CALIBRÉE POUR {duree_seance} MINUTES).
+    4. ✨ Défi Créatif.
+    5. ❓ LE QUIZ FINAL (ANTI-SPOILER dans <details>).
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
@@ -243,7 +238,7 @@ with col_droite:
             if mode_auto:
                 st.success("✅ Sujet non renseigné : Je lance la SUITE logique du programme !")
             
-            with st.spinner("Analyse pédagogique et génération de la fiche..."):
+            with st.spinner(f"Préparation d'une séance de {duree_seance} minutes..."):
                 try:
                     requete = f"Sujet: {final_subject}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
