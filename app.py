@@ -1,49 +1,217 @@
 import streamlit as st
 import google.generativeai as genai
+import pypdf
 import os
+import pandas as pd
 
-st.set_page_config(page_title="Inspecteur de Clé", page_icon="🕵️‍♂️")
+# --- 1. CONFIGURATION & DESIGN ---
+st.set_page_config(page_title="Le Labo d'Anna", page_icon="🌿", layout="wide")
 
-st.title("🕵️‍♂️ Inspecteur de Clé API")
+# CSS : Couleurs Pastel & Design Doux (Ambiance Spa/Studieuse)
+st.markdown("""
+<style>
+    /* Fond Général (Bleu Glacier très pâle) */
+    .stApp {
+        background-color: #e8f4f8;
+    }
 
-# 1. Vérification de la clé
+    /* Titres (Bleu nuit doux) */
+    h1, h2, h3 {
+        color: #34495e;
+        font-family: 'Helvetica', sans-serif;
+    }
+
+    /* Boutons (Vert Menthe Pastel) */
+    div.stButton > button {
+        background-color: #a8e6cf;
+        color: #2c3e50;
+        border: none;
+        border-radius: 12px;
+        padding: 10px 25px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        background-color: #88d8b0;
+        color: white;
+        transform: scale(1.02);
+    }
+
+    /* Zones d'info (Bleu ciel pastel) */
+    .stAlert {
+        background-color: #d6eaf8;
+        color: #2c3e50;
+        border: 1px solid #aed6f1;
+        border-radius: 10px;
+    }
+    
+    /* Expander (Menu déroulant) - Fond blanc pour lisibilité */
+    .streamlit-expanderHeader {
+        background-color: white;
+        border-radius: 5px;
+        color: #2c3e50;
+    }
+    
+    /* Inputs (Champs texte) */
+    .stTextInput > div > div > input {
+        border-radius: 10px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Récupération de la clé API
 api_key = st.secrets.get("GOOGLE_API_KEY")
-
 if not api_key:
-    st.error("❌ Aucune clé trouvée dans les Secrets.")
+    st.error("Clé API manquante.")
     st.stop()
-else:
-    st.success(f"✅ Clé détectée (commence par : {api_key[:5]}...)")
 
-# 2. Configuration
-try:
-    genai.configure(api_key=api_key)
-except Exception as e:
-    st.error(f"❌ Erreur de configuration : {e}")
+genai.configure(api_key=api_key)
 
-# 3. Interrogation de Google
-st.write("---")
-st.write("📡 J'interroge les serveurs de Google pour voir vos modèles accessibles...")
+# --- LE CŒUR DU RÉACTEUR (Mis à jour avec TA version disponible) ---
+# On utilise explicitement le modèle que tu as trouvé dans la liste
+model = genai.GenerativeModel('models/gemini-2.5-flash')
 
-if st.button("Lancer l'inspection maintenant"):
+# --- 2. FONCTIONS TECHNIQUES ---
+def extract_pdf_text(file_path_or_buffer):
     try:
-        models = genai.list_models()
-        found_models = []
-        
-        st.write("### 📋 Résultat de l'enquête :")
-        
-        for m in models:
-            # On cherche les modèles capables de générer du texte (generateContent)
-            if 'generateContent' in m.supported_generation_methods:
-                st.markdown(f"- ✅ **`{m.name}`**")
-                found_models.append(m.name)
-        
-        if not found_models:
-            st.warning("Aucun modèle de génération de texte trouvé. La clé semble valide mais n'a accès à rien.")
+        pdf_reader = pypdf.PdfReader(file_path_or_buffer)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+        return text
+    except: return ""
+
+def load_bibliotheque_content(folder_name):
+    """Charge le savoir (PDFs)"""
+    content = ""
+    if os.path.exists(folder_name):
+        for filename in os.listdir(folder_name):
+            if filename.lower().endswith(".pdf"):
+                path = os.path.join(folder_name, filename)
+                with open(path, "rb") as f:
+                    text = extract_pdf_text(f)
+                    if text: content += f"\nSOURCE ({filename}): {text[:25000]}" # On augmente la mémoire car le 2.5 est puissant
+    return content
+
+def load_programme_csv(folder_name):
+    """Charge la structure (CSV)"""
+    path = os.path.join(folder_name, "programme.csv")
+    if os.path.exists(path):
+        try:
+            return pd.read_csv(path, sep=None, engine='python')
+        except: return None
+    return None
+
+def create_download_link(content):
+    html = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: 'Helvetica', sans-serif; background-color: #fdfefe; padding: 40px; color: #444; line-height: 1.6; }}
+            .container {{ background-color: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 800px; margin: auto; }}
+            h1 {{ color: #2980b9; text-align: center; border-bottom: 4px solid #a8e6cf; padding-bottom: 20px; }}
+            h2 {{ color: #16a085; margin-top: 35px; border-left: 5px solid #a8e6cf; padding-left: 10px; }}
+            h3 {{ color: #2c3e50; margin-top: 25px; }}
+            a {{ color: #e74c3c; font-weight: bold; text-decoration: none; border-bottom: 2px solid #fadbd8; transition: all 0.2s; }}
+            a:hover {{ background-color: #fadbd8; color: #c0392b; }}
+            li {{ margin-bottom: 10px; }}
+            strong {{ color: #2980b9; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Séance du Labo d'Anna 🇷🇪</h1>
+            {content.replace(chr(10), '<br>').replace('**', '<b>').replace('## ', '<h2>').replace('### ', '<h3>').replace('- ', '• ')}
+        </div>
+    </body>
+    </html>
+    """
+    return html.encode('utf-8')
+
+# --- 3. CHARGEMENT DONNÉES ---
+biblio_text = load_bibliotheque_content("bibliotheque")
+df_programme = load_programme_csv("bibliotheque")
+
+# --- 4. INTERFACE ---
+st.title("🇷🇪 Le Labo d'Anna")
+st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
+
+col_gauche, col_droite = st.columns([1, 2])
+
+# --- GAUCHE : PROGRESSION ---
+progression_context = ""
+with col_gauche:
+    st.info("### 📍 Progression")
+    if df_programme is not None and not df_programme.empty:
+        matieres = df_programme['Matiere'].unique()
+        for matiere in matieres:
+            chapitres = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
+            options = ["(Rien commencé)"] + chapitres
+            choix = st.selectbox(f"{matiere}", options, key=matiere)
+            if choix != "(Rien commencé)":
+                progression_context += f"- {matiere} : '{choix}' est ACQUIS.\n"
+            else:
+                progression_context += f"- {matiere} : Débutant.\n"
+    else:
+        st.warning("⚠️ Fichier 'programme.csv' introuvable.")
+
+# --- DROITE : ACTION ---
+with col_droite:
+    st.markdown("### ✨ Préparer la séance")
+    
+    with st.expander("📂 Document du jour (Devoir PDF)"):
+        user_pdf = st.file_uploader("Glisse le fichier ici", type=["pdf"])
+        user_pdf_content = extract_pdf_text(user_pdf) if user_pdf else ""
+
+    c1, c2 = st.columns(2)
+    with c1:
+        sujet = st.text_input("Sujet ?", placeholder="Tape un sujet... OU tape 'SUITE'")
+        if sujet.upper().strip() == "SUITE":
+            st.success("✅ Mode Pilote Auto")
+    with c2:
+        humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
+
+    outil_pref = st.radio("Outil ?", ["🎲 Surprise", "📺 Vidéo", "📱 iPad"], horizontal=True)
+
+    # --- 5. PROMPT ---
+    system_prompt = f"""
+    Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
+    Tu t'adresses DIRECTEMENT à elle.
+    
+    DONNÉES :
+    1. PROGRESSION : {progression_context}
+    2. BIBLIOTHÈQUE : {biblio_text}
+    3. DOCUMENT DU JOUR : {user_pdf_content}
+    
+    RÈGLES :
+    - Si "SUITE" : Trouve le chapitre suivant logique.
+    - ZÉRO PRESSION : Mots bannis (Brevet, Notes, Examen).
+    - TON : Encourangeant, calme, liens avec la Réunion.
+    - LIENS : URL Vidéos cliquables OBLIGATOIRES (YouTube/Lumni).
+    
+    STRUCTURE :
+    1. 👋 Check-Up ("On avance bien sur...")
+    2. 🥑 Accroche Fun.
+    3. ⏱️ Mission (Activités).
+    4. ✨ Défi Créatif.
+    """
+
+    if st.button("🚀 Lancer la séance", type="primary"):
+        if not sujet and not user_pdf:
+            st.warning("Il me faut un sujet (ou tape 'SUITE') !")
         else:
-            st.success(f"🎉 Victoire ! Ta clé a accès à {len(found_models)} modèles.")
-            st.info("Copie le nom exact d'un des modèles ci-dessus (ex: models/gemini-1.5-flash) pour l'utiliser.")
-            
-    except Exception as e:
-        st.error(f"❌ Erreur critique lors de la connexion : {e}")
-        st.warning("Il est possible que ta clé API n'ait pas les droits 'Generative Language API' activés dans la console Google Cloud.")
+            with st.spinner("Gemini 2.5 analyse le programme..."):
+                try:
+                    requete = f"Sujet: {sujet}. Mood: {humeur}. Outil: {outil_pref}. Instructions: {system_prompt}"
+                    response = model.generate_content(requete)
+                    
+                    st.markdown("---")
+                    st.markdown(response.text)
+                    
+                    html_data = create_download_link(response.text)
+                    st.download_button("📥 Télécharger la fiche", html_data, "Seance_Anna.html", "text/html")
+                    
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+
+st.markdown("<br>", unsafe_allow_html=True)
