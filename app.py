@@ -3,11 +3,11 @@ import google.generativeai as genai
 import pypdf
 import os
 import pandas as pd
+import re # Pour gérer la numérotation intelligente
 
 # --- 1. CONFIGURATION & DESIGN ---
 st.set_page_config(page_title="Le Labo d'Anna", page_icon="🌿", layout="wide")
 
-# CSS : Couleurs Pastel & Design Doux
 st.markdown("""
 <style>
     .stApp { background-color: #e8f4f8; }
@@ -20,10 +20,11 @@ st.markdown("""
     .stAlert { background-color: #d6eaf8; color: #2c3e50; border: 1px solid #aed6f1; border-radius: 10px; }
     .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
     .stTextInput > div > div > input { border-radius: 10px; }
+    /* Style pour le multiselect */
+    .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; }
 </style>
 """, unsafe_allow_html=True)
 
-# API Key
 api_key = st.secrets.get("GOOGLE_API_KEY")
 if not api_key:
     st.error("Clé API manquante.")
@@ -61,6 +62,14 @@ def load_programme_csv(folder_name):
         except: return None
     return None
 
+def clean_chapter_name(index, name):
+    """Ajoute un numéro propre (1. 2. 3.) devant le chapitre"""
+    # Si le chapitre commence déjà par un chiffre, on le garde tel quel
+    if re.match(r'^\d', str(name)):
+        return str(name)
+    # Sinon on ajoute le numéro d'index
+    return f"{index + 1}. {name}"
+
 def create_download_link(content):
     html = f"""
     <html>
@@ -96,25 +105,53 @@ st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
 
 col_gauche, col_droite = st.columns([1, 2])
 
+# --- GAUCHE : SÉLECTION & PROGRESSION ---
+progression_context = ""
+
 with col_gauche:
-    st.info("### 📍 Progression")
+    st.info("### 1️⃣ Matières & Progression")
+    
     if df_programme is not None and not df_programme.empty:
-        matieres = df_programme['Matiere'].unique()
-        progression_context = ""
-        for matiere in matieres:
-            chapitres = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
-            options = ["(Rien commencé)"] + chapitres
-            choix = st.selectbox(f"{matiere}", options, key=matiere)
-            if choix != "(Rien commencé)":
-                progression_context += f"- {matiere} : '{choix}' est ACQUIS.\n"
-            else:
-                progression_context += f"- {matiere} : Débutant.\n"
+        # A. SÉLECTION DES MATIÈRES (Le filtre)
+        toutes_matieres = df_programme['Matiere'].unique().tolist()
+        matieres_selectionnees = st.multiselect(
+            "Quelles matières veux-tu voir aujourd'hui ?",
+            toutes_matieres,
+            placeholder="Choisis une ou plusieurs matières..."
+        )
+        
+        # B. AFFICHAGE DYNAMIQUE (Uniquement ce qui est coché)
+        if matieres_selectionnees:
+            st.markdown("---")
+            st.caption("Indique le **dernier chapitre terminé** :")
+            
+            for matiere in matieres_selectionnees:
+                # Récupération des chapitres
+                chapitres_bruts = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
+                
+                # Numérotation automatique (1. X, 2. Y...)
+                chapitres_propres = [clean_chapter_name(i, c) for i, c in enumerate(chapitres_bruts)]
+                
+                options = ["(Rien commencé)"] + chapitres_propres
+                
+                # Le Menu Déroulant
+                choix = st.selectbox(f"Progression {matiere}", options, key=matiere)
+                
+                if choix != "(Rien commencé)":
+                    progression_context += f"- {matiere} : Le chapitre '{choix}' est ACQUIS.\n"
+                else:
+                    progression_context += f"- {matiere} : Niveau débutant (aucun chapitre validé).\n"
+        else:
+            st.caption("👈 Commence par sélectionner une matière ci-dessus.")
+            
     else:
         st.warning("⚠️ Fichier 'programme.csv' introuvable.")
 
+# --- DROITE : ACTION ---
 with col_droite:
-    st.markdown("### ✨ Préparer la séance")
+    st.markdown("### 2️⃣ Préparer la séance")
     
+    # Zone Document
     with st.expander("📂 Document du jour (Devoir PDF)"):
         user_pdf = st.file_uploader("Glisse le fichier ici", type=["pdf"])
         user_pdf_content = extract_pdf_text(user_pdf) if user_pdf else ""
@@ -124,42 +161,49 @@ with col_droite:
         sujet = st.text_input("Sujet ?", placeholder="Tape un sujet... OU tape 'SUITE'")
         if sujet.upper().strip() == "SUITE":
             st.success("✅ Mode Pilote Auto")
+            if not matieres_selectionnees:
+                st.warning("⚠️ Attention : Sélectionne d'abord une matière à gauche pour que je sache quoi proposer !")
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
     outil_pref = st.radio("Outil ?", ["🎲 Surprise", "📺 Vidéo", "📱 iPad"], horizontal=True)
 
-    # --- 5. PROMPT CORRIGÉ (MODE SENS UNIQUE) ---
+    # --- 5. PROMPT ---
     system_prompt = f"""
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
-    CONTEXTE TECHNIQUE (TRÈS IMPORTANT) :
-    - Tu génères une "Fiche de séance" statique que Anna va lire.
-    - **ELLE NE PEUT PAS TE RÉPONDRE.** L'interface ne permet pas d'écrire de réponse.
-    - **INTERDICTION** de poser des questions directes attendant une réponse ("Dis-moi ce que tu penses", "Quelle est la réponse ?").
-    - **REMPLACE PAR** des consignes d'action autonomes : "Réfléchis à...", "Note sur ton iPad...", "Dis à voix haute...", "Essaie de deviner avant de lire la suite".
+    CONTEXTE TECHNIQUE (RAPPEL) :
+    - Tu génères une "Fiche de séance" statique.
+    - **ELLE NE PEUT PAS TE RÉPONDRE.**
+    - **INTERDICTION** de poser des questions directes ("Dis-moi...").
+    - **REMPLACE PAR** des consignes d'action ("Réfléchis à...", "Note sur ton iPad...").
 
     DONNÉES :
-    1. PROGRESSION : {progression_context}
+    1. PROGRESSION SUR LES MATIÈRES SÉLECTIONNÉES : 
+    {progression_context if progression_context else "Aucune matière sélectionnée ou progression indiquée."}
+    
     2. BIBLIOTHÈQUE : {biblio_text}
     3. DOCUMENT DU JOUR : {user_pdf_content}
     
-    RÈGLES PÉDAGO :
-    - Si "SUITE" : Trouve le chapitre suivant logique.
+    RÈGLES :
+    - Si "SUITE" : Regarde la progression fournie. Trouve le chapitre NUMÉROTÉ suivant dans la liste. Propose ce cours.
     - ZÉRO PRESSION : Mots bannis (Brevet, Notes, Examen).
     - TON : Encourangeant, calme, liens avec la Réunion.
-    - LIENS : URL Vidéos cliquables OBLIGATOIRES (YouTube/Lumni).
+    - LIENS : URL Vidéos cliquables OBLIGATOIRES.
     
-    STRUCTURE DE LA FICHE :
+    STRUCTURE :
     1. 👋 Check-Up ("On avance bien sur...")
-    2. 🥑 Accroche Fun (Sans question directe).
-    3. ⏱️ Mission (Activités à faire sur l'iPad ou regarder).
-    4. ✨ Défi Créatif (Une production à faire sur son iPad de son côté).
+    2. 🥑 Accroche Fun.
+    3. ⏱️ Mission (Activités).
+    4. ✨ Défi Créatif.
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
+        # Vérification qu'on a bien de quoi travailler
         if not sujet and not user_pdf:
             st.warning("Il me faut un sujet (ou tape 'SUITE') !")
+        elif sujet.upper().strip() == "SUITE" and not progression_context:
+            st.error("Pour faire 'SUITE', tu dois cocher une matière à gauche et dire où tu en es !")
         else:
             with st.spinner("Gemini 2.5 prépare la feuille de route..."):
                 try:
