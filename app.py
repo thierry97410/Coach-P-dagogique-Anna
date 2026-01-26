@@ -1,133 +1,101 @@
 import streamlit as st
 import google.generativeai as genai
-import os
+import pypdf
 
-# --- 1. CONFIGURATION DE LA PAGE ---
-st.set_page_config(
-    page_title="Le Labo d'Anna",
-    page_icon="🧠",
-    layout="centered"
-)
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Le Labo d'Anna", page_icon="🧠", layout="centered")
 
-# --- 2. CONNEXION À L'IA (LA CLÉ) ---
-# On va chercher la clé dans les "Secrets" de Streamlit
+# Récupération de la clé API
 api_key = st.secrets.get("GOOGLE_API_KEY")
-
 if not api_key:
-    # Si on teste sur son propre PC sans les secrets, on peut mettre la clé ici provisoirement
-    # Mais pour la mise en ligne, il faudra utiliser les Secrets
-    st.info("👋 Bonjour Thierry ! Pour que l'app fonctionne en ligne, n'oublie pas de configurer la clé dans les Secrets sur share.streamlit.io")
+    st.error("Oups ! Clé API introuvable.")
     st.stop()
 
-# Configuration du moteur
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-pro')
 
-# --- 3. L'INTERFACE (CE QU'ANNA VOIT) ---
+# --- 2. FONCTION POUR LIRE LE PDF ---
+def extract_pdf_text(uploaded_file):
+    try:
+        pdf_reader = pypdf.PdfReader(uploaded_file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text()
+        return text
+    except Exception as e:
+        return None
+
+# --- 3. L'INTERFACE ---
 st.title("👋 Salut Anna !")
-st.write("Configure ta séance selon ton envie du moment.")
+st.write("Configure ta séance (avec ou sans tes cours).")
+
+# ZONE DÉPÔT DE FICHIER (Menu déroulant discret)
+with st.expander("📂 J'ai un document de cours (PDF) à utiliser"):
+    pdf_file = st.file_uploader("Glisse ton fichier ici", type=["pdf"])
+    pdf_content = ""
+    
+    if pdf_file:
+        with st.spinner("Analyse du document en cours..."):
+            extracted_text = extract_pdf_text(pdf_file)
+            if extracted_text:
+                pdf_content = extracted_text
+                st.success("✅ Document lu ! Je vais m'appuyer dessus.")
+            else:
+                st.error("Impossible de lire ce PDF.")
 
 st.markdown("---")
 
-# Les 3 questions pour Anna
+# LES PARAMÈTRES
 col1, col2 = st.columns(2)
-
 with col1:
-    sujet = st.text_input("1. On explore quel sujet ?", placeholder="Ex: Les Volcans, Pythagore, English...")
-
+    sujet = st.text_input("1. Le sujet ?", placeholder="Ex: La Guerre Froide...")
 with col2:
-    humeur = st.selectbox(
-        "2. Ton énergie actuelle ?",
-        [
-            "😴 Mode Chill (15 min - Juste écouter)",
-            "🧐 Mode Curieuse (30 min - Vidéo + Jeu)",
-            "🚀 Mode Focus (45 min - Plan complet)"
-        ]
-    )
+    humeur = st.selectbox("2. Ton énergie ?", [
+        "😴 Mode Chill (15 min - Juste écouter)",
+        "🧐 Mode Curieuse (30 min - Vidéo + Jeu)",
+        "🚀 Mode Focus (45 min - Plan complet)"
+    ])
 
-outil_pref = st.radio(
-    "3. Ta préférence d'outil ?",
-    ["🎲 Surprends-moi", "📺 Full Lumni (Vidéo)", "📱 Team iPad (Apps & Tactile)"],
-    horizontal=True
-)
+outil_pref = st.radio("3. Outil ?", ["🎲 Mix Surprise", "📺 Lumni", "📱 iPad"], horizontal=True)
 
-st.markdown("---")
+# --- 4. LE CERVEAU (Prompt) ---
+system_prompt = f"""
+Tu es le coach personnel d'Anna (14 ans, 3ème, Réunion).
+TON OBJECTIF : Créer une séance sur mesure pour elle.
 
-# --- 4. LE PROMPT SYSTÈME (TON COACH PÉDAGO) ---
-system_prompt = """
-Tu es le moteur pédagogique de l'application "Anna's Learning App".
-Ton rôle est de générer une séance sur mesure pour Anna (14 ans, 3ème, Réunion, refus scolaire anxieux).
-
-CONTEXTE :
-- Lieu : Île de la Réunion.
-- Matériel : iPad 9 (Apps, Tactile), Compte Lumni Premium.
-- Philosophie : Zéro pression, curiosité pure. Pas de mention d'enjeux futurs (Lycée/Brevet).
-
-RÈGLES DE GÉNÉRATION SELON LES PARAMÈTRES :
-
-A. Si "Mode Chill" (15 min) :
-   - Contenu 100% passif (Vidéo Lumni ou Podcast).
-   - Pas d'exercice. Juste de la découverte.
-
-B. Si "Mode Curieuse" (30 min) :
-   - Mix : Vidéo/Contenu + Une activité interactive sur iPad (Simulateur, Quiz, Schéma).
-
-C. Si "Mode Focus" (45 min) :
-   - Plan complet : Intro Fun + Contenu + Activité créative + Synthèse.
-
-D. Gestion des Outils :
-   - Si "Full Lumni" : Force l'usage de Lumni.
-   - Si "Team iPad" : Propose Apps natives (Freeform, Dictée), Sites web interactifs.
-   - Si "Surprends-moi" : Fais un mix équilibré.
-
-FORMAT DE SORTIE ATTENDU (Markdown) :
-Ne dis pas bonjour. Affiche directement :
-
-## 🎯 [Titre Fun de la Séance]
-
-### 🥑 L'Accroche
-[Une phrase intrigante pour capter l'attention]
-
-### ⏱️ Le Programme
-1. **[Titre Étape 1]** : [Lien URL direct cliquable]
-   *Pourquoi c'est cool :* [Une phrase]
-
-2. **[Titre Étape 2]** : [Consigne iPad précise]
-   *L'activité :* [Instructions simples]
-
-### ✨ Le petit défi "Anna Experte"
-[Une micro-tâche de validation sans stress : audio, dessin, explication orale]
+RÈGLES CAPITALES :
+1. Si un CONTENU PDF est fourni ci-dessous, tu DOIS construire la séance en utilisant ces informations (définitions, dates, contexte du prof).
+2. Zéro pression : sois cool, encourageante, pas de "scolaire".
+3. Structure de réponse :
+   - Titre Fun
+   - Teaser (Accroche)
+   - Le Programme (Étapes claires avec liens ou consignes iPad)
+   - Le Défi "Anna Experte" (Validation ludique)
 
 ---
-*(Généré pour le profil : 3ème / Réunion)*
+CONTENU DU DOCUMENT PDF FOURNI PAR ANNA :
+{pdf_content if pdf_content else "Aucun document fourni. Utilise ta culture générale."}
+---
 """
 
-# --- 5. LE BOUTON MAGIQUE ---
+# --- 5. BOUTON ACTION ---
 if st.button("✨ Générer ma séance", type="primary"):
-    if not sujet:
-        st.warning("Oups ! Tu as oublié de dire quel sujet t'intéresse.")
+    if not sujet and not pdf_file:
+        st.warning("Il me faut au moins un sujet ou un fichier PDF !")
     else:
-        with st.spinner("Je connecte les neurones..."):
+        with st.spinner("Je prépare ton programme..."):
             try:
-                # On assemble la requête pour l'IA
-                requete_finale = f"""
-                Génère une séance pour Anna avec ces paramètres :
-                - SUJET : {sujet}
-                - ÉNERGIE : {humeur}
-                - OUTIL : {outil_pref}
-                
-                Instructions système à suivre impérativement : {system_prompt}
-                """
-                
-                # Appel à Gemini
-                response = model.generate_content(requete_finale)
-                
-                # Affichage du résultat
+                # On envoie tout à l'IA
+                requete = f"Sujet: {sujet}. Énergie: {humeur}. Outil: {outil_pref}. Instructions système: {system_prompt}"
+                response = model.generate_content(requete)
                 st.markdown(response.text)
                 
+                # Petit bloc pour copier le plan (pour Papa)
+                with st.expander("📝 Copier le plan (Format Texte)"):
+                    st.code(response.text)
+                    
             except Exception as e:
-                st.error(f"Une petite erreur est survenue : {e}")
+                st.error(f"Erreur : {e}")
 
-# Footer
 st.markdown("---")
-st.caption("Coach Cap 2nde - Propulsé par Gemini Pro")
+st.caption("Coach Cap 2nde - Lecture PDF activée")
