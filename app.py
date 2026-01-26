@@ -2,20 +2,24 @@ import streamlit as st
 import google.generativeai as genai
 import pypdf
 import os
+import pandas as pd # L'outil magique pour lire ton fichier CSV
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Le Labo d'Anna", page_icon="🇷🇪", layout="centered")
+st.set_page_config(page_title="Le Labo d'Anna", page_icon="🇷🇪", layout="wide")
 
+# Récupération de la clé API
 api_key = st.secrets.get("GOOGLE_API_KEY")
 if not api_key:
-    st.error("Clé API manquante.")
+    st.error("Clé API manquante. Vérifie les 'Secrets' dans Streamlit.")
     st.stop()
 
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-pro')
 
-# --- 2. FONCTIONS ---
+# --- 2. FONCTIONS TECHNIQUES ---
+
 def extract_pdf_text(file_path_or_buffer):
+    """Lit le texte d'un PDF"""
     try:
         pdf_reader = pypdf.PdfReader(file_path_or_buffer)
         text = ""
@@ -24,108 +28,166 @@ def extract_pdf_text(file_path_or_buffer):
         return text
     except: return ""
 
-def load_bibliotheque(folder_name):
-    combined_text = ""
-    suivi_text = ""  # Variable pour stocker le suivi
-    
+def load_bibliotheque_content(folder_name):
+    """Lit tous les PDF du dossier bibliothèque pour la culture générale"""
+    content = ""
     if os.path.exists(folder_name):
-        files = os.listdir(folder_name)
-        for filename in files:
-            path = os.path.join(folder_name, filename)
-            
-            # Si c'est le fichier de SUIVI (txt)
-            if filename == "suivi.txt":
-                with open(path, "r", encoding="utf-8") as f:
-                    suivi_text = f.read()
-            
-            # Si c'est un PDF (Programme, manuels...)
-            elif filename.lower().endswith(".pdf"):
+        for filename in os.listdir(folder_name):
+            if filename.lower().endswith(".pdf"):
+                path = os.path.join(folder_name, filename)
                 with open(path, "rb") as f:
                     text = extract_pdf_text(f)
-                    if text:
-                        combined_text += f"\n--- SOURCE : {filename} ---\n{text}"
-                        
-    return combined_text, suivi_text
+                    if text: content += f"\nSOURCE DE SAVOIR ({filename}): {text[:15000]}"
+    return content
+
+def load_programme_csv(folder_name):
+    """Charge la liste des chapitres depuis le fichier CSV"""
+    path = os.path.join(folder_name, "programme.csv")
+    if os.path.exists(path):
+        try:
+            # On lit le fichier avec détection auto du séparateur
+            df = pd.read_csv(path, sep=None, engine='python')
+            return df
+        except Exception as e:
+            st.error(f"Erreur de lecture du CSV : {e}")
+            return None
+    return None
 
 def create_download_link(content):
-    html = f"""<html><body>{content.replace(chr(10), '<br>').replace('**', '<b>').replace('## ', '<h2>')}</body></html>"""
+    """Crée le fichier HTML à télécharger"""
+    html = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: 'Helvetica', sans-serif; max-width: 800px; margin: auto; padding: 20px; line-height: 1.6; color: #333; }}
+            h1 {{ color: #2c3e50; text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
+            h2 {{ color: #2980b9; margin-top: 30px; }}
+            h3 {{ color: #16a085; }}
+            .box {{ background-color: #f9f9f9; border-left: 5px solid #3498db; padding: 15px; margin: 20px 0; }}
+            a {{ color: #e74c3c; text-decoration: none; font-weight: bold; }}
+            a:hover {{ text-decoration: underline; }}
+        </style>
+    </head>
+    <body>
+        <h1>Séance du Labo d'Anna 🇷🇪</h1>
+        {content.replace(chr(10), '<br>').replace('**', '<b>').replace('## ', '<h2>').replace('### ', '<h3>').replace('- ', '• ')}
+    </body>
+    </html>
+    """
     return html.encode('utf-8')
 
-# --- 3. CHARGEMENT MÉMOIRE ---
-biblio_text, suivi_text = load_bibliotheque("bibliotheque")
+# --- 3. CHARGEMENT DES DONNÉES ---
+biblio_text = load_bibliotheque_content("bibliotheque")
+df_programme = load_programme_csv("bibliotheque")
 
-# --- 4. INTERFACE ---
+# --- 4. INTERFACE GRAPHIQUE ---
 st.title("🇷🇪 Le Labo d'Anna")
+st.caption("Coach Pédago Bienveillant - Programme Officiel 3ème")
 
-# Affichage de la progression (Pour info)
-if suivi_text:
-    with st.expander("📈 Voir ma progression actuelle"):
-        st.info(suivi_text)
-else:
-    st.caption("Astuce : Crée un fichier 'suivi.txt' dans la bibliothèque pour que je suive ta progression.")
+col_gauche, col_droite = st.columns([1, 2])
 
-# Zone Document du Jour
-with st.expander("📂 Document spécifique (Devoir du jour)"):
-    user_pdf = st.file_uploader("Dépose ton fichier ici", type=["pdf"])
-    user_pdf_content = extract_pdf_text(user_pdf) if user_pdf else ""
+# --- COLONNE GAUCHE : SUIVI PROGRESSION ---
+progression_context = ""
+
+with col_gauche:
+    st.markdown("### 📍 Où en est-on ?")
+    st.info("Indique le DERNIER chapitre terminé pour chaque matière.")
+    
+    if df_programme is not None and not df_programme.empty:
+        # Liste des matières uniques
+        matieres = df_programme['Matiere'].unique()
+        
+        for matiere in matieres:
+            # On récupère les chapitres de cette matière
+            chapitres = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
+            # Ajout de l'option "Rien fait"
+            options = ["(Rien commencé)"] + chapitres
+            
+            # Le Menu Déroulant
+            choix = st.selectbox(f"{matiere}", options, key=matiere)
+            
+            if choix != "(Rien commencé)":
+                progression_context += f"- {matiere} : Le chapitre '{choix}' est VALIDÉ/ACQUIS.\n"
+            else:
+                progression_context += f"- {matiere} : Aucun chapitre validé.\n"
+    else:
+        st.warning("⚠️ Fichier 'programme.csv' introuvable ou vide dans le dossier 'bibliotheque'.")
+
+# --- COLONNE DROITE : GÉNÉRATEUR ---
+with col_droite:
+    st.markdown("### ✨ Créer ma séance")
+    
+    # Zone Upload Devoir
+    with st.expander("📂 J'ai un devoir ou un document PDF spécifique pour aujourd'hui"):
+        user_pdf = st.file_uploader("Glisse ton fichier ici", type=["pdf"])
+        user_pdf_content = extract_pdf_text(user_pdf) if user_pdf else ""
+
+    # Paramètres de séance
+    c1, c2 = st.columns(2)
+    with c1:
+        sujet = st.text_input("Sujet du jour ?", placeholder="Tape un sujet... OU tape 'SUITE'")
+        if sujet.upper().strip() == "SUITE":
+            st.success("✅ Mode 'Pilote Automatique' activé !")
+            st.caption("Je vais regarder ta progression à gauche et proposer la suite logique.")
+    with c2:
+        humeur = st.selectbox("Ton énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
+
+    outil_pref = st.radio("Outil préféré ?", ["🎲 Mix Surprise", "📺 Vidéo (YouTube/Lumni)", "📱 iPad (Apps Créatives)"], horizontal=True)
+
+    # --- 5. LE PROMPT ---
+    system_prompt = f"""
+    Tu es le Coach Personnel d'Anna (14 ans, 3ème, Réunion).
+    Tu t'adresses DIRECTEMENT à elle (tu la tutoies).
+    
+    TES DONNÉES DE NAVIGATION :
+    1. PROGRESSION ACTUELLE (Ce qui est fait) :
+    {progression_context}
+    
+    2. SAVOIRS & MANUELS (Bibliothèque) :
+    {biblio_text[:20000]}
+    
+    3. DOCUMENT DU JOUR (Si fourni) :
+    {user_pdf_content}
+    
+    RÈGLES DU JEU :
+    - Si le sujet est "SUITE" : Analyse la progression. Trouve le chapitre qui vient juste APRES celui validé dans une des matières principales (Maths, Français, Histoire ou SVT). Propose ce nouveau chapitre.
+    - Si le sujet est libre : Vérifie si Anna a les bases (progression).
+    - INTERDIT : Mots "Brevet", "Notes", "Examen", "Lycée".
+    - TON : Encourangeant, complice, lien avec la Réunion.
+    - LIENS : Si vidéo proposée -> URL cliquable OBLIGATOIRE.
+    
+    STRUCTURE DE TA RÉPONSE :
+    1. 👋 Le Check-Up : "Salut Anna ! J'ai vu que tu avais validé [Chapitre d'avant]..."
+    2. 🥑 L'Accroche Fun (Teaser).
+    3. ⏱️ La Mission (Activités concrètes avec liens).
+    4. ✨ Le Défi Créatif (iPad/Vocal/Dessin).
+    """
+
+    # Bouton Lancement
+    if st.button("🚀 Lancer la séance", type="primary"):
+        if not sujet and not user_pdf:
+            st.warning("Il me faut un sujet (ou tape 'SUITE') !")
+        else:
+            with st.spinner("Analyse de ta progression et recherche des meilleures ressources..."):
+                try:
+                    # Appel à Gemini
+                    requete = f"Sujet: {sujet}. Mood: {humeur}. Outil: {outil_pref}. Instructions: {system_prompt}"
+                    response = model.generate_content(requete)
+                    
+                    # Affichage
+                    st.markdown("---")
+                    st.markdown(response.text)
+                    
+                    # Téléchargement
+                    html_data = create_download_link(response.text)
+                    st.download_button(
+                        label="📥 Télécharger cette séance (Fiche HTML)",
+                        data=html_data,
+                        file_name=f"Seance_Anna.html",
+                        mime="text/html"
+                    )
+                    
+                except Exception as e:
+                    st.error(f"Une erreur est survenue : {e}")
 
 st.markdown("---")
-
-col1, col2 = st.columns(2)
-with col1:
-    # On ajoute une option "La suite logique"
-    sujet = st.text_input("1. Sujet ?", placeholder="Ex: Guerre Froide... ou tape 'SUITE'")
-    st.caption("Tape 'SUITE' pour que je te propose le prochain chapitre logique.")
-with col2:
-    humeur = st.selectbox("2. Mood ?", ["😴 Chill", "🧐 Curieuse", "🚀 Focus"])
-
-outil_pref = st.radio("3. Outils ?", ["🎲 Mix Surprise", "📺 Vidéo (YouTube/Lumni)", "📱 iPad (Apps)"], horizontal=True)
-
-# --- 5. PROMPT AVEC MÉMOIRE ---
-system_prompt = f"""
-Tu es le Coach d'Anna (14 ans, 3ème, Réunion).
-
-TES DONNÉES :
-1. **HISTORIQUE DE PROGRESSION (CE QUI EST FAIT)** :
-   {suivi_text if suivi_text else "Pas d'historique disponible."}
-   
-2. **BIBLIOTHÈQUE (PROGRAMMES & MANUELS)** :
-   {biblio_text[:20000]}
-
-RÈGLES DE PROGRESSION :
-- Regarde l'HISTORIQUE ci-dessus.
-- Si le sujet demandé est "SUITE", analyse le programme officiel (dans la bibliothèque) et propose le chapitre qui vient juste APRES ceux marqués comme "FAIT" ou "ACQUIS".
-- Si Anna demande un sujet précis, vérifie dans l'historique s'il est déjà acquis. Si oui, propose une séance d'approfondissement ou de révision ludique, pas de découverte.
-
-RÈGLES D'OR :
-- Vidéos = Liens cliquables obligatoires.
-- Zéro pression (Mots bannis : Brevet, Notes).
-- Format Markdown clair.
-
-STRUCTURE DE RÉPONSE :
-1. **Le Check-Up** : "J'ai vu que tu avais déjà fait [Dernier truc fait]. Aujourd'hui on attaque..."
-2. **L'Accroche Fun**.
-3. **Le Programme**.
-4. **Le Défi**.
-
----
-DEMANDE D'ANNA :
-Sujet : {sujet}
-Document du jour : {user_pdf_content}
----
-"""
-
-# --- 6. GÉNÉRATION ---
-if st.button("✨ Lancer ma séance", type="primary"):
-    if not sujet and not user_pdf:
-        st.warning("Il me faut un sujet (ou tape 'SUITE') !")
-    else:
-        with st.spinner("Vérification de ta progression et génération..."):
-            try:
-                requete = f"Sujet: {sujet}. Mood: {humeur}. Outil: {outil_pref}. Instructions: {system_prompt}"
-                response = model.generate_content(requete)
-                st.markdown(response.text)
-                html_data = create_download_link(response.text)
-                st.download_button("📥 Télécharger la fiche", html_data, f"Seance_{sujet}.html", "text/html")
-            except Exception as e:
-                st.error(f"Erreur : {e}")
