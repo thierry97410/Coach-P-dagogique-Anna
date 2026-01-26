@@ -13,14 +13,14 @@ st.markdown("""
     .stApp { background-color: #e8f4f8; }
     h1, h2, h3 { color: #34495e; font-family: 'Helvetica', sans-serif; }
     
-    /* Boutons standards (Vert) */
+    /* Boutons standards */
     div.stButton > button {
         background-color: #a8e6cf; color: #2c3e50; border: none; border-radius: 12px;
         padding: 10px 25px; font-weight: bold; transition: all 0.3s ease;
     }
     div.stButton > button:hover { background-color: #88d8b0; color: white; transform: scale(1.02); }
     
-    /* Bouton Réinitialiser (Rouge doux pour le distinguer) */
+    /* Bouton Réinitialiser (Rouge doux) */
     button[kind="secondary"] {
         background-color: #fadbd8; color: #c0392b; border: 1px solid #e6b0aa;
     }
@@ -28,6 +28,9 @@ st.markdown("""
     .stAlert { background-color: #d6eaf8; color: #2c3e50; border: 1px solid #aed6f1; border-radius: 10px; }
     .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
     .stTextInput > div > div > input { border-radius: 10px; }
+    
+    /* Style pour les Multiselect (Tags) */
+    .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -107,7 +110,6 @@ with col_header_1:
     st.title("🇷🇪 Le Labo d'Anna")
     st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
 with col_header_2:
-    # BOUTON RÉINITIALISER (En haut à droite)
     if st.button("🔄 Nouvelle Fiche", type="secondary"):
         st.rerun()
 
@@ -157,11 +159,13 @@ with col_droite:
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
-    # SELECTEUR D'OUTILS (Modifié)
-    outil_pref = st.radio(
-        "Outils ?", 
-        ["🚀 Mix (Tous les outils)", "📺 Vidéo", "📱 iPad", "📝 Papier/Crayon"], 
-        horizontal=True
+    # --- NOUVEAU : SÉLECTEUR MULTIPLE D'OUTILS ---
+    # st.multiselect remplace st.radio pour permettre la combinaison
+    outils_choisis = st.multiselect(
+        "Boîte à outils (Tu peux en cocher plusieurs) :",
+        ["📺 Vidéo (YouTube/Lumni)", "📱 iPad (Apps Créatives)", "📝 Papier/Crayon (Cartes mentales/Schémas)", "🎲 Jeu/Manip"],
+        default=["📺 Vidéo (YouTube/Lumni)"], # Par défaut, vidéo est coché
+        placeholder="Choisis les supports..."
     )
 
     # --- 5. PROMPT ---
@@ -169,7 +173,7 @@ with col_droite:
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
     CONTEXTE TECHNIQUE :
-    - Fiche de séance statique (PAS DE CONVERSATION).
+    - Fiche de séance statique.
     - **INTERDICTION** de poser des questions ("Dis-moi...").
     - **CONSIGNES D'ACTION** uniquement ("Note...", "Réfléchis...", "Dessine...").
 
@@ -178,11 +182,12 @@ with col_droite:
     2. BIBLIOTHÈQUE : {biblio_text}
     3. DOCUMENT DU JOUR : {user_pdf_content}
     
-    RÈGLES OUTILS :
-    - Outil choisi : {outil_pref}
-    - Si "Mix" : Utilise tout (Vidéo + iPad + Écrit).
-    - Si "Papier/Crayon" : Pas d'écran ! Propose schémas, cartes mentales, écriture.
-    - Si "Vidéo" : Lien URL cliquable OBLIGATOIRE.
+    RÈGLES OUTILS (COMBINAISON OBLIGATOIRE) :
+    - Outils imposés : {", ".join(outils_choisis)}
+    - Tu dois construire la séance en utilisant TOUS les outils cochés ci-dessus.
+    - Si "Vidéo" est présent : Lien URL cliquable OBLIGATOIRE.
+    - Si "Papier/Crayon" est présent : Prévois une étape de schéma ou d'écriture manuscrite.
+    - Si "iPad" est présent : Prévois une utilisation créative (Keynote, Freeform, GarageBand...).
     
     RÈGLES PÉDAGO :
     - Si "SUITE" : Chapitre suivant logique.
@@ -192,7 +197,7 @@ with col_droite:
     STRUCTURE :
     1. 👋 Check-Up.
     2. 🥑 Accroche Fun.
-    3. ⏱️ Mission (Adaptée à l'outil {outil_pref}).
+    3. ⏱️ La Mission (Mélange les outils choisis : {", ".join(outils_choisis)}).
     4. ✨ Défi Créatif.
     """
 
@@ -201,10 +206,15 @@ with col_droite:
             st.warning("Il me faut un sujet (ou tape 'SUITE') !")
         elif sujet.upper().strip() == "SUITE" and not progression_context:
             st.error("Coche une matière à gauche !")
+        elif not outils_choisis:
+            st.warning("⚠️ Coche au moins un outil dans la liste !")
         else:
-            with st.spinner("Gemini 2.5 prépare la feuille de route..."):
+            with st.spinner("Gemini 2.5 mixe les outils..."):
                 try:
-                    requete = f"Sujet: {sujet}. Mood: {humeur}. Outil: {outil_pref}. Instructions: {system_prompt}"
+                    # On convertit la liste des outils en texte pour le prompt
+                    liste_outils_str = ", ".join(outils_choisis)
+                    
+                    requete = f"Sujet: {sujet}. Mood: {humeur}. Outils: {liste_outils_str}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
                     
                     st.markdown("---")
