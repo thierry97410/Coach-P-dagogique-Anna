@@ -13,6 +13,7 @@ st.markdown("""
     .stApp { background-color: #e8f4f8; }
     h1, h2, h3 { color: #34495e; font-family: 'Helvetica', sans-serif; }
     
+    /* Boutons */
     div.stButton > button {
         background-color: #a8e6cf; color: #2c3e50; border: none; border-radius: 12px;
         padding: 10px 25px; font-weight: bold; transition: all 0.3s ease;
@@ -38,7 +39,8 @@ if not api_key:
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
-# --- 2. FONCTIONS ---
+# --- 2. FONCTIONS (OPTIMISÉES AVEC CACHE) ---
+
 def extract_pdf_text(file_path_or_buffer):
     try:
         pdf_reader = pypdf.PdfReader(file_path_or_buffer)
@@ -48,6 +50,7 @@ def extract_pdf_text(file_path_or_buffer):
         return text
     except: return ""
 
+@st.cache_data # <--- LE TURBO : Garde en mémoire le contenu de la bibliothèque
 def load_bibliotheque_content(folder_name):
     content = ""
     if os.path.exists(folder_name):
@@ -59,6 +62,7 @@ def load_bibliotheque_content(folder_name):
                     if text: content += f"\nSOURCE ({filename}): {text[:30000]}"
     return content
 
+@st.cache_data # <--- LE TURBO : Garde en mémoire le programme CSV
 def load_programme_csv(folder_name):
     path = os.path.join(folder_name, "programme.csv")
     if os.path.exists(path):
@@ -81,6 +85,8 @@ def create_download_link(content):
             h1 {{ color: #2980b9; text-align: center; border-bottom: 4px solid #a8e6cf; padding-bottom: 20px; }}
             h2 {{ color: #16a085; margin-top: 35px; border-left: 5px solid #a8e6cf; padding-left: 10px; }}
             h3 {{ color: #2c3e50; margin-top: 25px; }}
+            .quiz {{ background-color: #e8f8f5; padding: 20px; border-radius: 10px; border: 1px solid #a2d9ce; margin-top: 30px; }}
+            .reponse {{ font-size: 0.8em; color: #999; margin-top: 50px; border-top: 1px dashed #ccc; padding-top: 10px; }}
             a {{ color: #e74c3c; font-weight: bold; text-decoration: none; border-bottom: 2px solid #fadbd8; transition: all 0.2s; }}
             a:hover {{ background-color: #fadbd8; color: #c0392b; }}
             li {{ margin-bottom: 10px; }}
@@ -96,7 +102,7 @@ def create_download_link(content):
     """
     return html.encode('utf-8')
 
-# --- 3. DONNÉES ---
+# --- 3. CHARGEMENT DONNÉES ---
 biblio_text = load_bibliotheque_content("bibliotheque")
 df_programme = load_programme_csv("bibliotheque")
 
@@ -107,6 +113,8 @@ with col_header_1:
     st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
 with col_header_2:
     if st.button("🔄 Nouvelle Fiche", type="secondary"):
+        # On vide le cache si besoin lors du reset, ou juste rerun
+        st.cache_data.clear()
         st.rerun()
 
 col_gauche, col_droite = st.columns([1, 2])
@@ -166,23 +174,22 @@ with col_droite:
         placeholder="Ajoute des outils..."
     )
 
-    # --- LOGIQUE INTELLIGENTE SUJET ---
+    # --- LOGIQUE INTELLIGENTE ---
     final_subject = sujet
     mode_auto = False
-    
     if not final_subject and not user_pdf:
         if progression_context:
             final_subject = "SUITE"
             mode_auto = True
 
-    # --- LOGIQUE MIX TOUT ---
+    # --- LOGIQUE MIX ---
     instruction_outils = ""
     if any("Mix Tout" in outil for outil in outils_choisis):
         instruction_outils = "UTILISE TOUS LES OUTILS DISPONIBLES."
     else:
         instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
 
-    # --- 6. PROMPT SÉCURISÉ ---
+    # --- 6. PROMPT FINAL (Quiz + Sécurité + Fun) ---
     system_prompt = f"""
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
@@ -194,26 +201,21 @@ with col_droite:
     
     RÈGLES OUTILS & SÉCURITÉ (Whitelist) :
     - {instruction_outils}
+    - **LIENS VIDÉO** : Génère UNIQUEMENT des liens de RECHERCHE YouTube avec une chaîne fiable.
+    - Maths -> Ajoute "Yvan Monka" ou "Les Bons Profs"
+    - Français/Histoire/Géo -> Ajoute "Lumni" ou "Les Bons Profs"
+    - Sciences -> Ajoute "Lumni" ou "C'est pas Sorcier"
+    - Exemple : `https://www.youtube.com/results?search_query=Sujet+Yvan+Monka`
     
-    🛑 SÉCURITÉ DES LIENS VIDÉO (OBLIGATOIRE) :
-    - Ne génère JAMAIS de lien vidéo direct (risque de lien mort).
-    - Génère UNIQUEMENT des liens de RECHERCHE YouTube (`https://www.youtube.com/results?search_query=...`).
-    - **TU DOIS AJOUTER UNE CHAINE FIABLE DANS LA RECHERCHE** selon la matière :
-        * Maths -> Ajoute "Yvan Monka" ou "Les Bons Profs"
-        * Français/Histoire/Géo -> Ajoute "Lumni" ou "Les Bons Profs"
-        * Sciences -> Ajoute "Lumni" ou "C'est pas Sorcier"
-    - Exemple valide : `https://www.youtube.com/results?search_query=Théorème+Thalès+Yvan+Monka`
-    
-    RÈGLES PÉDAGO :
-    - Si "SUITE" : Chapitre suivant logique.
-    - ZÉRO PRESSION : Mots bannis (Brevet, Notes, Examen).
-    - TON : Encourangeant, clair, Réunion (très subtil/lèger).
-    
-    STRUCTURE :
+    STRUCTURE DE LA FICHE :
     1. 👋 Check-Up.
-    2. 🥑 Accroche Fun.
+    2. 🥑 Accroche Fun (Réunion subtile).
     3. ⏱️ La Mission (Activités).
     4. ✨ Défi Créatif.
+    5. ❓ LE QUIZ FLASH (5 QUESTIONS) :
+       - Pose 5 questions QCM simples sur la leçon.
+       - NE METS PAS LA RÉPONSE TOUT DE SUITE.
+       - A la toute fin de la fiche, saute des lignes et écris : "⬇️ RÉPONSES (Ne regarde pas avant d'avoir fini !)" en petit caractères.
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
@@ -227,6 +229,9 @@ with col_droite:
                 try:
                     requete = f"Sujet: {final_subject}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
+                    
+                    # 🎉 LA CÉLÉBRATION (BALLONS)
+                    st.balloons()
                     
                     st.markdown("---")
                     st.markdown(response.text)
