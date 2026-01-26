@@ -3,7 +3,7 @@ import google.generativeai as genai
 import pypdf
 import os
 import pandas as pd
-import re # Pour gérer la numérotation intelligente
+import re
 
 # --- 1. CONFIGURATION & DESIGN ---
 st.set_page_config(page_title="Le Labo d'Anna", page_icon="🌿", layout="wide")
@@ -12,16 +12,22 @@ st.markdown("""
 <style>
     .stApp { background-color: #e8f4f8; }
     h1, h2, h3 { color: #34495e; font-family: 'Helvetica', sans-serif; }
+    
+    /* Boutons standards (Vert) */
     div.stButton > button {
         background-color: #a8e6cf; color: #2c3e50; border: none; border-radius: 12px;
         padding: 10px 25px; font-weight: bold; transition: all 0.3s ease;
     }
     div.stButton > button:hover { background-color: #88d8b0; color: white; transform: scale(1.02); }
+    
+    /* Bouton Réinitialiser (Rouge doux pour le distinguer) */
+    button[kind="secondary"] {
+        background-color: #fadbd8; color: #c0392b; border: 1px solid #e6b0aa;
+    }
+    
     .stAlert { background-color: #d6eaf8; color: #2c3e50; border: 1px solid #aed6f1; border-radius: 10px; }
     .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
     .stTextInput > div > div > input { border-radius: 10px; }
-    /* Style pour le multiselect */
-    .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -63,11 +69,7 @@ def load_programme_csv(folder_name):
     return None
 
 def clean_chapter_name(index, name):
-    """Ajoute un numéro propre (1. 2. 3.) devant le chapitre"""
-    # Si le chapitre commence déjà par un chiffre, on le garde tel quel
-    if re.match(r'^\d', str(name)):
-        return str(name)
-    # Sinon on ajoute le numéro d'index
+    if re.match(r'^\d', str(name)): return str(name)
     return f"{index + 1}. {name}"
 
 def create_download_link(content):
@@ -100,58 +102,47 @@ biblio_text = load_bibliotheque_content("bibliotheque")
 df_programme = load_programme_csv("bibliotheque")
 
 # --- 4. INTERFACE ---
-st.title("🇷🇪 Le Labo d'Anna")
-st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
+col_header_1, col_header_2 = st.columns([3, 1])
+with col_header_1:
+    st.title("🇷🇪 Le Labo d'Anna")
+    st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
+with col_header_2:
+    # BOUTON RÉINITIALISER (En haut à droite)
+    if st.button("🔄 Nouvelle Fiche", type="secondary"):
+        st.rerun()
 
 col_gauche, col_droite = st.columns([1, 2])
 
-# --- GAUCHE : SÉLECTION & PROGRESSION ---
+# --- GAUCHE ---
 progression_context = ""
-
 with col_gauche:
     st.info("### 1️⃣ Matières & Progression")
-    
     if df_programme is not None and not df_programme.empty:
-        # A. SÉLECTION DES MATIÈRES (Le filtre)
         toutes_matieres = df_programme['Matiere'].unique().tolist()
-        matieres_selectionnees = st.multiselect(
-            "Quelles matières veux-tu voir aujourd'hui ?",
-            toutes_matieres,
-            placeholder="Choisis une ou plusieurs matières..."
-        )
+        matieres_selectionnees = st.multiselect("Quelles matières aujourd'hui ?", toutes_matieres)
         
-        # B. AFFICHAGE DYNAMIQUE (Uniquement ce qui est coché)
         if matieres_selectionnees:
             st.markdown("---")
-            st.caption("Indique le **dernier chapitre terminé** :")
-            
+            st.caption("Dernier chapitre terminé :")
             for matiere in matieres_selectionnees:
-                # Récupération des chapitres
                 chapitres_bruts = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
-                
-                # Numérotation automatique (1. X, 2. Y...)
                 chapitres_propres = [clean_chapter_name(i, c) for i, c in enumerate(chapitres_bruts)]
-                
                 options = ["(Rien commencé)"] + chapitres_propres
-                
-                # Le Menu Déroulant
-                choix = st.selectbox(f"Progression {matiere}", options, key=matiere)
+                choix = st.selectbox(f"{matiere}", options, key=matiere)
                 
                 if choix != "(Rien commencé)":
                     progression_context += f"- {matiere} : Le chapitre '{choix}' est ACQUIS.\n"
                 else:
-                    progression_context += f"- {matiere} : Niveau débutant (aucun chapitre validé).\n"
+                    progression_context += f"- {matiere} : Débutant.\n"
         else:
-            st.caption("👈 Commence par sélectionner une matière ci-dessus.")
-            
+            st.caption("👈 Choisis une matière.")
     else:
         st.warning("⚠️ Fichier 'programme.csv' introuvable.")
 
-# --- DROITE : ACTION ---
+# --- DROITE ---
 with col_droite:
-    st.markdown("### 2️⃣ Préparer la séance")
+    st.markdown("### 2️⃣ Paramètres de la séance")
     
-    # Zone Document
     with st.expander("📂 Document du jour (Devoir PDF)"):
         user_pdf = st.file_uploader("Glisse le fichier ici", type=["pdf"])
         user_pdf_content = extract_pdf_text(user_pdf) if user_pdf else ""
@@ -162,48 +153,54 @@ with col_droite:
         if sujet.upper().strip() == "SUITE":
             st.success("✅ Mode Pilote Auto")
             if not matieres_selectionnees:
-                st.warning("⚠️ Attention : Sélectionne d'abord une matière à gauche pour que je sache quoi proposer !")
+                st.warning("⚠️ Sélectionne une matière à gauche !")
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
-    outil_pref = st.radio("Outil ?", ["🎲 Surprise", "📺 Vidéo", "📱 iPad"], horizontal=True)
+    # SELECTEUR D'OUTILS (Modifié)
+    outil_pref = st.radio(
+        "Outils ?", 
+        ["🚀 Mix (Tous les outils)", "📺 Vidéo", "📱 iPad", "📝 Papier/Crayon"], 
+        horizontal=True
+    )
 
     # --- 5. PROMPT ---
     system_prompt = f"""
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
-    CONTEXTE TECHNIQUE (RAPPEL) :
-    - Tu génères une "Fiche de séance" statique.
-    - **ELLE NE PEUT PAS TE RÉPONDRE.**
-    - **INTERDICTION** de poser des questions directes ("Dis-moi...").
-    - **REMPLACE PAR** des consignes d'action ("Réfléchis à...", "Note sur ton iPad...").
+    CONTEXTE TECHNIQUE :
+    - Fiche de séance statique (PAS DE CONVERSATION).
+    - **INTERDICTION** de poser des questions ("Dis-moi...").
+    - **CONSIGNES D'ACTION** uniquement ("Note...", "Réfléchis...", "Dessine...").
 
     DONNÉES :
-    1. PROGRESSION SUR LES MATIÈRES SÉLECTIONNÉES : 
-    {progression_context if progression_context else "Aucune matière sélectionnée ou progression indiquée."}
-    
+    1. PROGRESSION : {progression_context if progression_context else "Non spécifiée"}
     2. BIBLIOTHÈQUE : {biblio_text}
     3. DOCUMENT DU JOUR : {user_pdf_content}
     
-    RÈGLES :
-    - Si "SUITE" : Regarde la progression fournie. Trouve le chapitre NUMÉROTÉ suivant dans la liste. Propose ce cours.
+    RÈGLES OUTILS :
+    - Outil choisi : {outil_pref}
+    - Si "Mix" : Utilise tout (Vidéo + iPad + Écrit).
+    - Si "Papier/Crayon" : Pas d'écran ! Propose schémas, cartes mentales, écriture.
+    - Si "Vidéo" : Lien URL cliquable OBLIGATOIRE.
+    
+    RÈGLES PÉDAGO :
+    - Si "SUITE" : Chapitre suivant logique.
     - ZÉRO PRESSION : Mots bannis (Brevet, Notes, Examen).
     - TON : Encourangeant, calme, liens avec la Réunion.
-    - LIENS : URL Vidéos cliquables OBLIGATOIRES.
     
     STRUCTURE :
-    1. 👋 Check-Up ("On avance bien sur...")
+    1. 👋 Check-Up.
     2. 🥑 Accroche Fun.
-    3. ⏱️ Mission (Activités).
+    3. ⏱️ Mission (Adaptée à l'outil {outil_pref}).
     4. ✨ Défi Créatif.
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
-        # Vérification qu'on a bien de quoi travailler
         if not sujet and not user_pdf:
             st.warning("Il me faut un sujet (ou tape 'SUITE') !")
         elif sujet.upper().strip() == "SUITE" and not progression_context:
-            st.error("Pour faire 'SUITE', tu dois cocher une matière à gauche et dire où tu en es !")
+            st.error("Coche une matière à gauche !")
         else:
             with st.spinner("Gemini 2.5 prépare la feuille de route..."):
                 try:
