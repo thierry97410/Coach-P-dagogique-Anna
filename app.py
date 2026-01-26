@@ -13,7 +13,6 @@ st.markdown("""
     .stApp { background-color: #e8f4f8; }
     h1, h2, h3 { color: #34495e; font-family: 'Helvetica', sans-serif; }
     
-    /* Boutons */
     div.stButton > button {
         background-color: #a8e6cf; color: #2c3e50; border: none; border-radius: 12px;
         padding: 10px 25px; font-weight: bold; transition: all 0.3s ease;
@@ -28,6 +27,14 @@ st.markdown("""
     .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
     .stTextInput > div > div > input { border-radius: 10px; }
     .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; border-radius: 5px; }
+    
+    /* Style pour le Spoiler des réponses */
+    details {
+        background-color: #fff; border: 1px solid #ccc; border-radius: 5px; padding: 10px; margin-top: 20px;
+    }
+    summary {
+        font-weight: bold; cursor: pointer; color: #2980b9;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -39,7 +46,7 @@ if not api_key:
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('models/gemini-2.5-flash')
 
-# --- 2. FONCTIONS (OPTIMISÉES AVEC CACHE) ---
+# --- 2. FONCTIONS (CACHE ACTIVÉ) ---
 
 def extract_pdf_text(file_path_or_buffer):
     try:
@@ -50,7 +57,7 @@ def extract_pdf_text(file_path_or_buffer):
         return text
     except: return ""
 
-@st.cache_data # <--- LE TURBO (Ne change pas)
+@st.cache_data 
 def load_bibliotheque_content(folder_name):
     content = ""
     if os.path.exists(folder_name):
@@ -62,7 +69,7 @@ def load_bibliotheque_content(folder_name):
                     if text: content += f"\nSOURCE ({filename}): {text[:30000]}"
     return content
 
-@st.cache_data # <--- LE TURBO (Ne change pas)
+@st.cache_data
 def load_programme_csv(folder_name):
     path = os.path.join(folder_name, "programme.csv")
     if os.path.exists(path):
@@ -85,8 +92,12 @@ def create_download_link(content):
             h1 {{ color: #2980b9; text-align: center; border-bottom: 4px solid #a8e6cf; padding-bottom: 20px; }}
             h2 {{ color: #16a085; margin-top: 35px; border-left: 5px solid #a8e6cf; padding-left: 10px; }}
             h3 {{ color: #2c3e50; margin-top: 25px; }}
-            .quiz {{ background-color: #e8f8f5; padding: 20px; border-radius: 10px; border: 1px solid #a2d9ce; margin-top: 30px; }}
-            .reponse {{ font-size: 0.8em; color: #999; margin-top: 50px; border-top: 1px dashed #ccc; padding-top: 10px; }}
+            
+            /* Style Anti-Spoiler pour le HTML téléchargé */
+            details {{ background-color: #e8f8f5; border: 2px solid #a2d9ce; border-radius: 10px; padding: 15px; margin-top: 30px; }}
+            summary {{ font-weight: bold; color: #16a085; cursor: pointer; font-size: 1.1em; }}
+            summary:hover {{ color: #1abc9c; }}
+            
             a {{ color: #e74c3c; font-weight: bold; text-decoration: none; border-bottom: 2px solid #fadbd8; transition: all 0.2s; }}
             a:hover {{ background-color: #fadbd8; color: #c0392b; }}
             li {{ margin-bottom: 10px; }}
@@ -112,11 +123,9 @@ with col_header_1:
     st.title("🇷🇪 Le Labo d'Anna")
     st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
 with col_header_2:
-    # --- CORRECTION ICI ---
     if st.button("🔄 Nouvelle Fiche", type="secondary"):
-        st.session_state.clear() # On vide juste les formulaires
-        st.rerun() # On relance SANS vider le cache PDF
-    # ----------------------
+        st.session_state.clear()
+        st.rerun()
 
 col_gauche, col_droite = st.columns([1, 2])
 
@@ -175,7 +184,7 @@ with col_droite:
         placeholder="Ajoute des outils..."
     )
 
-    # --- LOGIQUE INTELLIGENTE ---
+    # LOGIQUE
     final_subject = sujet
     mode_auto = False
     if not final_subject and not user_pdf:
@@ -183,50 +192,58 @@ with col_droite:
             final_subject = "SUITE"
             mode_auto = True
 
-    # --- LOGIQUE MIX ---
     instruction_outils = ""
     if any("Mix Tout" in outil for outil in outils_choisis):
         instruction_outils = "UTILISE TOUS LES OUTILS DISPONIBLES."
     else:
         instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
 
-    # --- 6. PROMPT FINAL ---
+    # --- 6. LE SYSTEM PROMPT (VERSION FINALE) ---
     system_prompt = f"""
-    Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
+    ROLE : Tu es un **Enseignant de Collège avec beaucoup d'expérience**, doublé d'un **Expert en Neuro-éducation** et en **Psychologie de l'adolescent**.
     
-    CONTEXTE : Fiche statique. PAS DE QUESTIONS.
+    TON APPROCHE (LE MÉLANGE EXPÉRIENCE + SCIENCE) :
+    1. **L'Expérience Terrain** : Tu connais les pièges classiques, les moments où l'attention décroche, et tu sais être pragmatique. Tu ne fais pas de la théorie, tu fais du concret.
+    2. **La Psychologie Ado** : Ne jamais infantiliser. Adopte une posture de "Coach allié" (ferme mais bienveillant). Dédramatise l'erreur.
+    3. **Le Programme Français** : Tu es un spécialiste du Brevet et des attendus de fin de 3ème.
+    4. **La Réunion** : Tes exemples s'ancrent subtilement dans son réel (Volcan, Lagon, Cyclones, Interculturalité) uniquement si pertinent.
+    
+    SÉCURITÉ ET LIENS :
+    - Vidéos : Utilise UNIQUEMENT des liens de RECHERCHE YouTube avec mots-clés fiables ("Yvan Monka", "Lumni", "C'est pas Sorcier").
+    
     DONNÉES :
     - Progression : {progression_context if progression_context else "Non spécifiée"}
     - Bibliothèque : {biblio_text}
     - Document : {user_pdf_content}
-    
-    RÈGLES OUTILS & SÉCURITÉ (Whitelist) :
-    - {instruction_outils}
-    - **LIENS VIDÉO** : Génère UNIQUEMENT des liens de RECHERCHE YouTube avec une chaîne fiable.
-    - Maths -> Ajoute "Yvan Monka" ou "Les Bons Profs"
-    - Français/Histoire/Géo -> Ajoute "Lumni" ou "Les Bons Profs"
-    - Sciences -> Ajoute "Lumni" ou "C'est pas Sorcier"
-    - Exemple : `https://www.youtube.com/results?search_query=Sujet+Yvan+Monka`
+    - Outils : {instruction_outils}
     
     STRUCTURE DE LA FICHE :
-    1. 👋 Check-Up.
-    2. 🥑 Accroche Fun (Réunion subtile).
-    3. ⏱️ La Mission (Activités).
-    4. ✨ Défi Créatif.
-    5. ❓ LE QUIZ FLASH (5 QUESTIONS) :
-       - Pose 5 questions QCM simples sur la leçon.
-       - NE METS PAS LA RÉPONSE TOUT DE SUITE.
-       - A la toute fin de la fiche, saute des lignes et écris : "⬇️ RÉPONSES (Ne regarde pas avant d'avoir fini !)" en petit caractères.
+    
+    1. 👋 **Check-Up Rapide** : Rappel positif de ce qui est acquis.
+    2. 🥑 **L'Accroche "Pourquoi on fait ça ?"** : Donne du sens concret (ex: "Thalès, ça sert à mesurer un palmier sans grimper dessus").
+    3. ⏱️ **La Mission (Activités)** : Les exercices avec les outils choisis.
+    4. ✨ **Le Défi Créatif** : Une production personnelle.
+    
+    5. ❓ **LE QUIZ FINAL (ANTI-SPOILER)** :
+       - Pose 5 questions QCM.
+       - **OBLIGATOIRE** : Mets la correction dans un menu déroulant fermé :
+       
+       <details>
+       <summary>▶️ CLIQUE ICI POUR VOIR LA CORRECTION</summary>
+       <br>
+       1. Réponse A...<br>
+       2. Réponse C...
+       </details>
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
         if not final_subject and not user_pdf:
-            st.warning("⚠️ Indique un sujet, ou sélectionne une matière à gauche pour que je propose la suite !")
+            st.warning("⚠️ Indique un sujet, ou sélectionne une matière à gauche !")
         else:
             if mode_auto:
                 st.success("✅ Sujet non renseigné : Je lance la SUITE logique du programme !")
             
-            with st.spinner("Gemini 2.5 prépare la feuille de route..."):
+            with st.spinner("Analyse pédagogique et génération de la fiche..."):
                 try:
                     requete = f"Sujet: {final_subject}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
@@ -234,7 +251,7 @@ with col_droite:
                     st.balloons()
                     
                     st.markdown("---")
-                    st.markdown(response.text)
+                    st.markdown(response.text, unsafe_allow_html=True)
                     
                     html_data = create_download_link(response.text)
                     st.download_button("📥 Télécharger la fiche", html_data, "Seance_Anna.html", "text/html")
