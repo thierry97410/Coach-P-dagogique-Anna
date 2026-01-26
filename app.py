@@ -28,7 +28,6 @@ st.markdown("""
     .stTextInput > div > div > input { border-radius: 10px; }
     .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; border-radius: 5px; }
     
-    /* Style pour le Spoiler des réponses */
     details {
         background-color: #fff; border: 1px solid #ccc; border-radius: 5px; padding: 10px; margin-top: 20px;
     }
@@ -168,7 +167,6 @@ with col_droite:
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
-    # --- NOUVEAU : LE CURSEUR DE TEMPS ---
     duree_seance = st.slider("⏳ Durée de la séance (minutes) :", min_value=30, max_value=180, value=45, step=15)
 
     liste_options_outils = [
@@ -186,7 +184,6 @@ with col_droite:
         placeholder="Ajoute des outils..."
     )
 
-    # LOGIQUE
     final_subject = sujet
     mode_auto = False
     if not final_subject and not user_pdf:
@@ -200,20 +197,26 @@ with col_droite:
     else:
         instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
 
-    # --- 6. LE SYSTEM PROMPT (AVEC GESTION DU TEMPS) ---
+    # --- 6. LE SYSTEM PROMPT (CORRIGÉ POUR LE TON) ---
     system_prompt = f"""
-    ROLE : Tu es un **Enseignant de Collège expérimenté** et **Expert en Neuro-éducation**.
+    ROLE : Tu es le Coach Pédagogique personnel d'Anna (14 ans, 3ème, Réunion).
+    IDENTITÉ : Tu es un **Enseignant de Collège expérimenté** et **Expert en Neuro-éducation**.
+    
+    RÈGLE ABSOLUE DE TON (IMPORTANT) :
+    - **TUTOIEMENT OBLIGATOIRE**. Tu t'adresses DIRECTEMENT à Anna ("Salut Anna !", "Regarde ça...").
+    - **INTERDICTION** du vouvoiement. Tu es son allié, pas un manuel scolaire.
+    - Sois chaleureux, encourageant mais exigeant sur le fond.
     
     PARAMÈTRE CRUCIAL : LA DURÉE DE SÉANCE EST DE {duree_seance} MINUTES.
     Adapte le contenu en conséquence :
-    - Si < 45 min : Séance "Flash". Une seule notion clé, un exercice d'application directe. Pas de fioritures.
-    - Entre 45 et 90 min : Séance "Standard". Explications détaillées, plusieurs exercices de difficulté croissante.
-    - Si > 90 min : Séance "Intensive / Type Brevet". Tu DOIS proposer un sujet plus complexe (type annale), demander un travail de rédaction plus long, et insérer explicitement une "PAUSE" au milieu de la fiche.
+    - Si < 45 min : Séance "Flash". Une seule notion clé, un exercice d'application directe.
+    - Entre 45 et 90 min : Séance "Standard". Explications détaillées, plusieurs exercices.
+    - Si > 90 min : Séance "Intensive / Type Brevet". Sujet complexe (type annale) + PAUSE explicite.
     
     TON APPROCHE :
-    1. **Pragmatisme** : Tu connais le terrain et les attentes du Brevet.
-    2. **Psychologie Ado** : Coach allié, bienveillant, jamais infantilisant.
-    3. **Ancrage Réunion** : Subtil et pertinent uniquement.
+    1. **Pragmatisme** : Tu connais les attentes du Brevet.
+    2. **Psychologie Ado** : Ne jamais infantiliser. Dédramatise l'erreur.
+    3. **La Réunion** : Exemples ancrés dans son réel (Volcan, Lagon) si pertinent.
     
     SÉCURITÉ : Liens YouTube RECHERCHE uniquement (Yvan Monka, Lumni...).
     
@@ -224,7 +227,7 @@ with col_droite:
     - Outils : {instruction_outils}
     
     STRUCTURE DE LA FICHE :
-    1. 👋 Check-Up.
+    1. 👋 Check-Up ("Salut Anna ! Prête pour...").
     2. 🥑 Accroche Fun.
     3. ⏱️ La Mission (CALIBRÉE POUR {duree_seance} MINUTES).
     4. ✨ Défi Créatif.
@@ -238,7 +241,7 @@ with col_droite:
             if mode_auto:
                 st.success("✅ Sujet non renseigné : Je lance la SUITE logique du programme !")
             
-            with st.spinner(f"Préparation d'une séance de {duree_seance} minutes..."):
+            with st.spinner(f"Préparation d'une séance de {duree_seance} minutes pour Anna..."):
                 try:
                     requete = f"Sujet: {final_subject}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
