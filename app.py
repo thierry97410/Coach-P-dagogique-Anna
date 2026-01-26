@@ -90,7 +90,7 @@ def load_bibliotheque_content(folder_name):
                 path = os.path.join(folder_name, filename)
                 with open(path, "rb") as f:
                     text = extract_pdf_text(f)
-                    if text: content += f"\nSOURCE ({filename}): {text[:25000]}" # On augmente la mémoire car le 2.5 est puissant
+                    if text: content += f"\nSOURCE ({filename}): {text[:30000]}" # On augmente la mémoire car le 2.5 est puissant
     return content
 
 def load_programme_csv(folder_name):
