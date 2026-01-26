@@ -20,7 +20,7 @@ st.markdown("""
     }
     div.stButton > button:hover { background-color: #88d8b0; color: white; transform: scale(1.02); }
     
-    /* Bouton Réinitialiser (Rouge doux) */
+    /* Bouton Réinitialiser */
     button[kind="secondary"] {
         background-color: #fadbd8; color: #c0392b; border: 1px solid #e6b0aa;
     }
@@ -28,8 +28,6 @@ st.markdown("""
     .stAlert { background-color: #d6eaf8; color: #2c3e50; border: 1px solid #aed6f1; border-radius: 10px; }
     .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
     .stTextInput > div > div > input { border-radius: 10px; }
-    
-    /* Style Tags Multiselect */
     .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
@@ -151,15 +149,12 @@ with col_droite:
 
     c1, c2 = st.columns(2)
     with c1:
-        sujet = st.text_input("Sujet ?", placeholder="Tape un sujet... OU tape 'SUITE'")
-        if sujet.upper().strip() == "SUITE":
-            st.success("✅ Mode Pilote Auto")
-            if not matieres_selectionnees:
-                st.warning("⚠️ Sélectionne une matière à gauche !")
+        # MODIFICATION : Placeholder explicite
+        sujet = st.text_input("Sujet ?", placeholder="Laisse vide pour la SUITE logique...")
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
-    # --- LISTE DES OUTILS ---
+    # --- LISTE OUTILS ---
     liste_options_outils = [
         "🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)",
         "📺 Vidéo (YouTube/Lumni)", 
@@ -168,13 +163,22 @@ with col_droite:
         "🎲 Jeu/Manip"
     ]
     
-    # MODIFICATION ICI : Default réglé sur "Mix Tout"
     outils_choisis = st.multiselect(
-        "Boîte à outils (Coche ce que tu veux utiliser) :",
+        "Boîte à outils :",
         liste_options_outils,
         default=["🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)"], 
         placeholder="Ajoute des outils..."
     )
+
+    # --- LOGIQUE INTELLIGENTE SUJET ---
+    # Si le sujet est vide MAIS qu'on a une progression -> On active le mode SUITE automatiquement
+    final_subject = sujet
+    mode_auto = False
+    
+    if not final_subject and not user_pdf:
+        if progression_context:
+            final_subject = "SUITE"
+            mode_auto = True
 
     # --- 5. LOGIQUE MIX TOUT ---
     instruction_outils = ""
@@ -188,8 +192,7 @@ with col_droite:
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
     CONTEXTE TECHNIQUE :
-    - Fiche statique. PAS DE QUESTIONS ("Dis-moi").
-    - CONSIGNES D'ACTION UNIQUEMENT.
+    - Fiche statique. PAS DE QUESTIONS. CONSIGNES D'ACTION UNIQUEMENT.
 
     DONNÉES :
     1. PROGRESSION : {progression_context if progression_context else "Non spécifiée"}
@@ -199,8 +202,6 @@ with col_droite:
     RÈGLES OUTILS :
     - {instruction_outils}
     - Si Vidéo : Lien URL cliquable OBLIGATOIRE.
-    - Si Papier : Schéma/Carte mentale.
-    - Si iPad : Création numérique.
     
     RÈGLES PÉDAGO :
     - Si "SUITE" : Chapitre suivant logique.
@@ -215,16 +216,16 @@ with col_droite:
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
-        if not sujet and not user_pdf:
-            st.warning("Il me faut un sujet (ou tape 'SUITE') !")
-        elif sujet.upper().strip() == "SUITE" and not progression_context:
-            st.error("Coche une matière à gauche !")
-        elif not outils_choisis:
-            st.warning("⚠️ Coche au moins un outil !")
+        # Vérification intelligente
+        if not final_subject and not user_pdf:
+            st.warning("⚠️ Indique un sujet, ou sélectionne une matière à gauche pour que je propose la suite !")
         else:
+            if mode_auto:
+                st.success("✅ Sujet non renseigné : Je lance la SUITE logique du programme !")
+            
             with st.spinner("Gemini 2.5 prépare la feuille de route..."):
                 try:
-                    requete = f"Sujet: {sujet}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
+                    requete = f"Sujet: {final_subject}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
                     
                     st.markdown("---")
