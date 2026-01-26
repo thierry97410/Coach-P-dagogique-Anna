@@ -29,7 +29,7 @@ st.markdown("""
     .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
     .stTextInput > div > div > input { border-radius: 10px; }
     
-    /* Style pour les Multiselect (Tags) */
+    /* Style Tags Multiselect */
     .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; border-radius: 5px; }
 </style>
 """, unsafe_allow_html=True)
@@ -159,35 +159,49 @@ with col_droite:
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill (Écoute)", "🧐 Curieuse (Jeu/Vidéo)", "🚀 Focus (Sérieux)"])
 
-    # --- NOUVEAU : SÉLECTEUR MULTIPLE D'OUTILS ---
-    # st.multiselect remplace st.radio pour permettre la combinaison
+    # --- LISTE DES OUTILS ---
+    # J'ai rajouté l'option MIX TOUT en premier
+    liste_options_outils = [
+        "🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)",
+        "📺 Vidéo (YouTube/Lumni)", 
+        "📱 iPad (Apps Créatives)", 
+        "📝 Papier/Crayon (Cartes mentales/Schémas)", 
+        "🎲 Jeu/Manip"
+    ]
+    
     outils_choisis = st.multiselect(
-        "Boîte à outils (Tu peux en cocher plusieurs) :",
-        ["📺 Vidéo (YouTube/Lumni)", "📱 iPad (Apps Créatives)", "📝 Papier/Crayon (Cartes mentales/Schémas)", "🎲 Jeu/Manip"],
-        default=["📺 Vidéo (YouTube/Lumni)"], # Par défaut, vidéo est coché
-        placeholder="Choisis les supports..."
+        "Boîte à outils (Coche ce que tu veux utiliser) :",
+        liste_options_outils,
+        default=["📺 Vidéo (YouTube/Lumni)"],
+        placeholder="Ajoute des outils..."
     )
 
-    # --- 5. PROMPT ---
+    # --- 5. LOGIQUE MIX TOUT ---
+    # Si l'utilisateur a coché "Mix Tout", on ignore le reste et on force TOUT
+    instruction_outils = ""
+    if any("Mix Tout" in outil for outil in outils_choisis):
+        instruction_outils = "UTILISE TOUS LES OUTILS DISPONIBLES : Vidéo, iPad, Papier, Jeu."
+    else:
+        instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
+
+    # --- 6. PROMPT ---
     system_prompt = f"""
     Tu es le Coach Pédagogique d'Anna (14 ans, 3ème, Réunion).
     
     CONTEXTE TECHNIQUE :
-    - Fiche de séance statique.
-    - **INTERDICTION** de poser des questions ("Dis-moi...").
-    - **CONSIGNES D'ACTION** uniquement ("Note...", "Réfléchis...", "Dessine...").
+    - Fiche statique. PAS DE QUESTIONS ("Dis-moi").
+    - CONSIGNES D'ACTION UNIQUEMENT.
 
     DONNÉES :
     1. PROGRESSION : {progression_context if progression_context else "Non spécifiée"}
     2. BIBLIOTHÈQUE : {biblio_text}
     3. DOCUMENT DU JOUR : {user_pdf_content}
     
-    RÈGLES OUTILS (COMBINAISON OBLIGATOIRE) :
-    - Outils imposés : {", ".join(outils_choisis)}
-    - Tu dois construire la séance en utilisant TOUS les outils cochés ci-dessus.
-    - Si "Vidéo" est présent : Lien URL cliquable OBLIGATOIRE.
-    - Si "Papier/Crayon" est présent : Prévois une étape de schéma ou d'écriture manuscrite.
-    - Si "iPad" est présent : Prévois une utilisation créative (Keynote, Freeform, GarageBand...).
+    RÈGLES OUTILS :
+    - {instruction_outils}
+    - Si Vidéo : Lien URL cliquable OBLIGATOIRE.
+    - Si Papier : Schéma/Carte mentale.
+    - Si iPad : Création numérique.
     
     RÈGLES PÉDAGO :
     - Si "SUITE" : Chapitre suivant logique.
@@ -197,7 +211,7 @@ with col_droite:
     STRUCTURE :
     1. 👋 Check-Up.
     2. 🥑 Accroche Fun.
-    3. ⏱️ La Mission (Mélange les outils choisis : {", ".join(outils_choisis)}).
+    3. ⏱️ La Mission (Activités variées).
     4. ✨ Défi Créatif.
     """
 
@@ -207,14 +221,11 @@ with col_droite:
         elif sujet.upper().strip() == "SUITE" and not progression_context:
             st.error("Coche une matière à gauche !")
         elif not outils_choisis:
-            st.warning("⚠️ Coche au moins un outil dans la liste !")
+            st.warning("⚠️ Coche au moins un outil !")
         else:
-            with st.spinner("Gemini 2.5 mixe les outils..."):
+            with st.spinner("Gemini 2.5 prépare la feuille de route..."):
                 try:
-                    # On convertit la liste des outils en texte pour le prompt
-                    liste_outils_str = ", ".join(outils_choisis)
-                    
-                    requete = f"Sujet: {sujet}. Mood: {humeur}. Outils: {liste_outils_str}. Instructions: {system_prompt}"
+                    requete = f"Sujet: {sujet}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
                     response = model.generate_content(requete)
                     
                     st.markdown("---")
