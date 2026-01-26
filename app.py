@@ -7,44 +7,45 @@ import pandas as pd
 # --- 1. CONFIGURATION & DESIGN ---
 st.set_page_config(page_title="Le Labo d'Anna", page_icon="🌿", layout="wide")
 
-# C'est ici qu'on injecte la PEINTURE (Le CSS)
+# CSS : Couleurs Pastel & Design Doux
 st.markdown("""
 <style>
-    /* 1. Le FOND GÉNÉRAL (Bleu Pastel très doux) */
+    /* Fond Général (Bleu Glacier très pâle) */
     .stApp {
         background-color: #e8f4f8;
     }
 
-    /* 2. Les TITRES (H1, H2, H3) en Bleu plus foncé pour le contraste */
+    /* Titres (Bleu nuit doux) */
     h1, h2, h3 {
-        color: #2c3e50;
+        color: #34495e;
         font-family: 'Helvetica', sans-serif;
     }
 
-    /* 3. Les TEXTES d'aide (Caption) */
-    .stCaption {
-        color: #7f8c8d;
-        font-size: 1.1em;
-    }
-    
-    /* 4. Personnalisation des BOUTONS (Vert Pastel) */
+    /* Boutons (Vert Menthe Pastel) */
     div.stButton > button {
         background-color: #a8e6cf;
         color: #2c3e50;
         border: none;
-        border-radius: 10px;
-        padding: 10px 20px;
+        border-radius: 12px;
+        padding: 10px 25px;
+        font-weight: bold;
     }
     div.stButton > button:hover {
         background-color: #88d8b0;
         color: white;
     }
 
-    /* 5. Les Zones d'info (Boites bleues) */
+    /* Zones d'info (Bleu ciel pastel) */
     .stAlert {
-        background-color: #d1f2eb;
+        background-color: #d6eaf8;
         color: #2c3e50;
-        border: none;
+        border: 1px solid #aed6f1;
+    }
+    
+    /* Expander (Menu déroulant) */
+    .streamlit-expanderHeader {
+        background-color: white;
+        border-radius: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -56,9 +57,11 @@ if not api_key:
     st.stop()
 
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-pro')
 
-# --- 2. FONCTIONS TECHNIQUES ---
+# --- CORRECTION ICI : ON PASSE AU MODÈLE 1.5 FLASH ---
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+# --- 2. FONCTIONS ---
 def extract_pdf_text(file_path_or_buffer):
     try:
         pdf_reader = pypdf.PdfReader(file_path_or_buffer)
@@ -76,7 +79,7 @@ def load_bibliotheque_content(folder_name):
                 path = os.path.join(folder_name, filename)
                 with open(path, "rb") as f:
                     text = extract_pdf_text(f)
-                    if text: content += f"\nSOURCE ({filename}): {text[:15000]}"
+                    if text: content += f"\nSOURCE ({filename}): {text[:20000]}"
     return content
 
 def load_programme_csv(folder_name):
@@ -92,12 +95,12 @@ def create_download_link(content):
     <html>
     <head>
         <style>
-            body {{ font-family: 'Helvetica', sans-serif; background-color: #f4f6f7; padding: 40px; color: #333; }}
-            .container {{ background-color: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-width: 800px; margin: auto; }}
-            h1 {{ color: #2980b9; text-align: center; border-bottom: 3px solid #a8e6cf; padding-bottom: 15px; }}
-            h2 {{ color: #16a085; margin-top: 30px; }}
-            .highlight {{ background-color: #e8f6f3; padding: 10px; border-radius: 5px; border-left: 5px solid #1abc9c; }}
+            body {{ font-family: 'Helvetica', sans-serif; background-color: #fdfefe; padding: 40px; color: #444; }}
+            .container {{ background-color: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 800px; margin: auto; }}
+            h1 {{ color: #2980b9; text-align: center; border-bottom: 4px solid #a8e6cf; padding-bottom: 20px; }}
+            h2 {{ color: #16a085; margin-top: 35px; }}
             a {{ color: #e74c3c; font-weight: bold; text-decoration: none; }}
+            li {{ margin-bottom: 10px; }}
         </style>
     </head>
     <body>
@@ -110,31 +113,26 @@ def create_download_link(content):
     """
     return html.encode('utf-8')
 
-# --- 3. CHARGEMENT DONNÉES ---
+# --- 3. DONNÉES ---
 biblio_text = load_bibliotheque_content("bibliotheque")
 df_programme = load_programme_csv("bibliotheque")
 
 # --- 4. INTERFACE ---
 st.title("🇷🇪 Le Labo d'Anna")
-# Modification du texte ici comme demandé
 st.caption("Coach Pédagogique - Programme Officiel 3ème")
 
 col_gauche, col_droite = st.columns([1, 2])
 
-# --- COLONNE GAUCHE : PROGRESSION (Fond coloré via st.info pour l'effet visuel) ---
+# --- GAUCHE : PROGRESSION ---
 progression_context = ""
-
 with col_gauche:
-    # On utilise un conteneur coloré pour détacher visuellement cette partie
-    st.info("### 📍 Progression & Chapitres")
-    
+    st.info("### 📍 Progression")
     if df_programme is not None and not df_programme.empty:
         matieres = df_programme['Matiere'].unique()
         for matiere in matieres:
             chapitres = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
             options = ["(Rien commencé)"] + chapitres
             choix = st.selectbox(f"{matiere}", options, key=matiere)
-            
             if choix != "(Rien commencé)":
                 progression_context += f"- {matiere} : '{choix}' est ACQUIS.\n"
             else:
@@ -142,7 +140,7 @@ with col_gauche:
     else:
         st.warning("⚠️ Fichier 'programme.csv' introuvable.")
 
-# --- COLONNE DROITE : ACTION ---
+# --- DROITE : ACTION ---
 with col_droite:
     st.markdown("### ✨ Préparer la séance")
     
@@ -154,7 +152,7 @@ with col_droite:
     with c1:
         sujet = st.text_input("Sujet ?", placeholder="Tape un sujet... OU tape 'SUITE'")
         if sujet.upper().strip() == "SUITE":
-            st.success("✅ Mode Pilote Automatique")
+            st.success("✅ Mode Pilote Auto")
     with c2:
         humeur = st.selectbox("Énergie ?", ["😴 Chill", "🧐 Curieuse", "🚀 Focus"])
 
@@ -167,14 +165,14 @@ with col_droite:
     
     DONNÉES :
     1. PROGRESSION : {progression_context}
-    2. BIBLIOTHÈQUE : {biblio_text[:20000]}
+    2. BIBLIOTHÈQUE : {biblio_text[:25000]}
     3. DOCUMENT DU JOUR : {user_pdf_content}
     
     RÈGLES :
-    - Si "SUITE" : Trouve le chapitre suivant logique d'après la progression.
-    - ZÉRO PRESSION : Pas de mots "Brevet", "Notes", "Examen".
+    - Si "SUITE" : Trouve le chapitre suivant logique.
+    - ZÉRO PRESSION : Mots bannis (Brevet, Notes, Examen).
     - TON : Encourangeant, calme, liens avec la Réunion.
-    - LIENS : Vidéos cliquables obligatoires.
+    - LIENS : URL Vidéos cliquables obligatoires.
     
     STRUCTURE :
     1. 👋 Check-Up ("On avance bien sur...")
@@ -201,4 +199,4 @@ with col_droite:
                 except Exception as e:
                     st.error(f"Erreur : {e}")
 
-st.markdown("<br><br>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
