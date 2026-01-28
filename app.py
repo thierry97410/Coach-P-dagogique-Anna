@@ -34,6 +34,11 @@ st.markdown("""
     summary {
         font-weight: bold; cursor: pointer; color: #2980b9;
     }
+    
+    /* Style pour la Brevet Box */
+    .brevet-box {
+        border: 2px dashed #e74c3c; padding: 15px; background-color: #fdedec; border-radius: 10px; margin-top: 20px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -96,6 +101,8 @@ def create_download_link(content):
             summary {{ font-weight: bold; color: #16a085; cursor: pointer; font-size: 1.1em; }}
             summary:hover {{ color: #1abc9c; }}
             
+            .brevet-box {{ border: 2px dashed #e74c3c; padding: 20px; background-color: #fff5f5; border-radius: 15px; margin: 30px 0; }}
+            
             a {{ color: #e74c3c; font-weight: bold; text-decoration: none; border-bottom: 2px solid #fadbd8; transition: all 0.2s; }}
             a:hover {{ background-color: #fadbd8; color: #c0392b; }}
             li {{ margin-bottom: 10px; }}
@@ -127,29 +134,67 @@ with col_header_2:
 
 col_gauche, col_droite = st.columns([1, 2])
 
-# --- GAUCHE ---
+# --- GAUCHE : DASHBOARD & PROGRESSION ---
 progression_context = ""
 with col_gauche:
-    st.info("### 1️⃣ Matières & Progression")
+    st.info("### 1️⃣ Tableau de Bord")
+    
     if df_programme is not None and not df_programme.empty:
+        # A. CALCUL ET AFFICHAGE DES BARRES DE PROGRESSION
+        # On stocke les choix dans session_state pour qu'ils persistent
+        if 'progress_data' not in st.session_state:
+            st.session_state.progress_data = {}
+
         toutes_matieres = df_programme['Matiere'].unique().tolist()
-        matieres_selectionnees = st.multiselect("Quelles matières aujourd'hui ?", toutes_matieres)
+        
+        # Sélection des matières
+        matieres_selectionnees = st.multiselect("Quelles matières travailler ?", toutes_matieres)
         
         if matieres_selectionnees:
             st.markdown("---")
-            st.caption("Dernier chapitre terminé :")
+            st.caption("📍 Où en est-on ?")
+            
             for matiere in matieres_selectionnees:
                 chapitres_bruts = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
-                chapitres_propres = [clean_chapter_name(i, c) for i, c in enumerate(chapitres_bruts)]
-                options = ["(Rien commencé)"] + chapitres_propres
-                choix = st.selectbox(f"{matiere}", options, key=matiere)
+                total_chapitres = len(chapitres_bruts)
+                
+                # Récupération de l'index du choix actuel
+                current_choice = st.session_state.get(f"choix_{matiere}", "(Rien commencé)")
+                
+                # Calcul pourcentage
+                if current_choice == "(Rien commencé)":
+                    progress_val = 0
+                else:
+                    # On nettoie le nom pour trouver l'index (car le selectbox a ajouté "1. ", "2. ")
+                    # Astuce : on utilise l'index dans la liste des options
+                    try:
+                        # On reconstruit la liste des options comme dans le selectbox
+                        options_clean = [clean_chapter_name(i, c) for i, c in enumerate(chapitres_bruts)]
+                        idx = options_clean.index(current_choice)
+                        progress_val = (idx + 1) / total_chapitres
+                    except:
+                        progress_val = 0
+                
+                # Affichage Barre + Menu
+                st.markdown(f"**{matiere}** ({int(progress_val*100)}%)")
+                st.progress(progress_val)
+                
+                options = ["(Rien commencé)"] + [clean_chapter_name(i, c) for i, c in enumerate(chapitres_bruts)]
+                
+                # Le Selectbox met à jour la variable choix_{matiere}
+                choix = st.selectbox(
+                    f"Chapitre terminé en {matiere}", 
+                    options, 
+                    key=f"choix_{matiere}",
+                    label_visibility="collapsed"
+                )
                 
                 if choix != "(Rien commencé)":
-                    progression_context += f"- {matiere} : Le chapitre '{choix}' est ACQUIS.\n"
+                    progression_context += f"- {matiere} : '{choix}' ACQUIS.\n"
                 else:
                     progression_context += f"- {matiere} : Débutant.\n"
         else:
-            st.caption("👈 Choisis une matière.")
+            st.caption("👈 Sélectionne une matière pour voir tes jauges !")
     else:
         st.warning("⚠️ Fichier 'programme.csv' introuvable.")
 
@@ -197,9 +242,9 @@ with col_droite:
     else:
         instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
 
-    # --- 6. LE SYSTEM PROMPT (TITRES DYNAMIQUES) ---
+    # --- 6. LE SYSTEM PROMPT (AVEC DASHBOARD & BREVET BOX) ---
     system_prompt = f"""
-    ROLE : Tu es le Coach Pédagogique personnel d'Anna (14 ans, 3ème, Réunion).
+    ROLE : Coach Pédagogique personnel d'Anna (14 ans, 3ème, Réunion).
     IDENTITÉ : Enseignant expérimenté + Expert Neuro-éducation.
     
     RÈGLES DE TON :
@@ -207,7 +252,6 @@ with col_droite:
     - Ton chaleureux, allié, mais sérieux sur le fond.
     
     PARAMÈTRE TEMPS : {duree_seance} MINUTES.
-    - Si > 90 min : Prévois une PAUSE explicite et un sujet type Brevet.
     
     SÉCURITÉ : Liens YouTube RECHERCHE uniquement (Yvan Monka, Lumni...).
     
@@ -218,15 +262,22 @@ with col_droite:
     - Outils : {instruction_outils}
     
     STRUCTURE DE LA FICHE :
-    1. 👋 **Check-Up** (Petit point rapide).
+    1. 👋 **Check-Up**.
     
-    2. 🥑 **[TITRE ACCROCHEUR SUR LE SUJET]** (IMPORTANT : Ne jamais écrire "Accroche Fun". Trouve un titre mystérieux ou drôle relié au sujet. Ex: "Pourquoi les volcans pètent-ils les plombs ?" au lieu de "Introduction").
+    2. 🥑 **[TITRE ACCROCHEUR SUR LE SUJET]** (Pas de "Accroche Fun").
     
-    3. ⏱️ **La Mission** (Activités calibrées pour {duree_seance} min).
+    3. ⏱️ **La Mission** (Activités calibrées).
     
-    4. ✨ **Défi Créatif**.
+    4. 🧠 **LA MEMO-BREVET (NOUVEAU)** :
+       - Crée un petit tableau synthétique intitulé "À COPIER SUR TA FICHE BRISTOL".
+       - Mets-y : 3 mots-clés, 1 date/formule clé, 1 piège à éviter.
+       - C'est ce qu'elle doit apprendre par cœur.
     
-    5. ❓ **LE QUIZ FINAL** (Réponses cachées dans <details><summary>Correction</summary>...).
+    5. 🥚 **Le Saviez-vous ?** : Une anecdote culturelle courte, surprenante ou drôle liée au sujet (pour briller en société).
+    
+    6. ✨ **Défi Créatif**.
+    
+    7. ❓ **LE QUIZ FINAL** (Réponses cachées dans <details>).
     """
 
     if st.button("🚀 Lancer la séance", type="primary"):
