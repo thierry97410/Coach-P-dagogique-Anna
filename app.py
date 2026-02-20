@@ -1,283 +1,108 @@
 import streamlit as st
-import google.generativeai as genai
-import pypdf
-import os
 import pandas as pd
-import re
+import os
+from PyPDF2 import PdfReader
+import google.generativeai as genai
 
-# --- 1. CONFIGURATION & DESIGN ---
-st.set_page_config(page_title="Le Labo d'Anna", page_icon="🌿", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Le Coach d'Anna", layout="wide")
 
-st.markdown("""
-<style>
-    .stApp { background-color: #e8f4f8; }
-    h1, h2, h3 { color: #34495e; font-family: 'Helvetica', sans-serif; }
-    
-    div.stButton > button {
-        background-color: #a8e6cf; color: #2c3e50; border: none; border-radius: 12px;
-        padding: 10px 25px; font-weight: bold; transition: all 0.3s ease;
-    }
-    div.stButton > button:hover { background-color: #88d8b0; color: white; transform: scale(1.02); }
-    
-    button[kind="secondary"] {
-        background-color: #fadbd8; color: #c0392b; border: 1px solid #e6b0aa;
-    }
-    
-    .stAlert { background-color: #d6eaf8; color: #2c3e50; border: 1px solid #aed6f1; border-radius: 10px; }
-    .streamlit-expanderHeader { background-color: white; border-radius: 5px; color: #2c3e50; }
-    .stTextInput > div > div > input { border-radius: 10px; }
-    .stMultiSelect span { background-color: #a8e6cf; color: #2c3e50; border-radius: 5px; }
-    
-    details {
-        background-color: #fff; border: 1px solid #ccc; border-radius: 5px; padding: 10px; margin-top: 20px;
-    }
-    summary {
-        font-weight: bold; cursor: pointer; color: #2980b9;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-api_key = st.secrets.get("GOOGLE_API_KEY")
-if not api_key:
-    st.error("Clé API manquante.")
+if "GEMINI_API_KEY" not in st.secrets:
+    st.error("Clé API manquante dans les secrets Streamlit.")
     st.stop()
 
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('models/gemini-2.5-flash')
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-pro')
 
-# --- 2. FONCTIONS (CACHE ACTIVÉ) ---
+# --- FONCTIONS ---
 
-def extract_pdf_text(file_path_or_buffer):
+def extract_pdf_text(file):
+    """Extrait le texte d'un PDF."""
     try:
-        pdf_reader = pypdf.PdfReader(file_path_or_buffer)
+        reader = PdfReader(file)
         text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+        for page in reader.pages:
+            content = page.extract_text()
+            if content:
+                text += content + "\n"
         return text
-    except: return ""
-
-@st.cache_data 
-def load_bibliotheque_content(folder_name):
-    content = ""
-    if os.path.exists(folder_name):
-        for filename in os.listdir(folder_name):
-            if filename.lower().endswith(".pdf"):
-                path = os.path.join(folder_name, filename)
-                with open(path, "rb") as f:
-                    text = extract_pdf_text(f)
-                    if text: content += f"\nSOURCE ({filename}): {text[:30000]}"
-    return content
+    except Exception as e:
+        return f"Erreur de lecture : {e}"
 
 @st.cache_data
-def load_programme_csv(folder_name):
-    path = os.path.join(folder_name, "programme.csv")
-    if os.path.exists(path):
-        try:
-            return pd.read_csv(path, sep=None, engine='python')
-        except: return None
-    return None
-
-def clean_chapter_name(index, name):
-    if re.match(r'^\d', str(name)): return str(name)
-    return f"{index + 1}. {name}"
-
-def create_download_link(content):
-    html = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: 'Helvetica', sans-serif; background-color: #fdfefe; padding: 40px; color: #444; line-height: 1.6; }}
-            .container {{ background-color: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 800px; margin: auto; }}
-            h1 {{ color: #2980b9; text-align: center; border-bottom: 4px solid #a8e6cf; padding-bottom: 20px; }}
-            h2 {{ color: #16a085; margin-top: 35px; border-left: 5px solid #a8e6cf; padding-left: 10px; }}
-            h3 {{ color: #2c3e50; margin-top: 25px; }}
-            
-            details {{ background-color: #e8f8f5; border: 2px solid #a2d9ce; border-radius: 10px; padding: 15px; margin-top: 30px; }}
-            summary {{ font-weight: bold; color: #16a085; cursor: pointer; font-size: 1.1em; }}
-            summary:hover {{ color: #1abc9c; }}
-            
-            a {{ color: #e74c3c; font-weight: bold; text-decoration: none; border-bottom: 2px solid #fadbd8; transition: all 0.2s; }}
-            a:hover {{ background-color: #fadbd8; color: #c0392b; }}
-            li {{ margin-bottom: 10px; }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>Séance du Labo d'Anna 🇷🇪</h1>
-            {content.replace(chr(10), '<br>').replace('**', '<b>').replace('## ', '<h2>').replace('### ', '<h3>').replace('- ', '• ')}
-        </div>
-    </body>
-    </html>
-    """
-    return html.encode('utf-8')
-
-# --- 3. CHARGEMENT DONNÉES ---
-biblio_text = load_bibliotheque_content("bibliotheque")
-df_programme = load_programme_csv("bibliotheque")
-
-# --- 4. INTERFACE ---
-col_header_1, col_header_2 = st.columns([3, 1])
-with col_header_1:
-    st.title("🇷🇪 Le Labo d'Anna")
-    st.caption("Coach Pédagogique - Propulsé par Gemini 2.5")
-with col_header_2:
-    if st.button("🔄 Nouvelle Fiche", type="secondary"):
-        st.session_state.clear()
-        st.rerun()
-
-col_gauche, col_droite = st.columns([1, 2])
-
-# --- GAUCHE : DASHBOARD & PROGRESSION ---
-progression_context = ""
-with col_gauche:
-    st.info("### 1️⃣ Tableau de Bord")
+def get_subject_content(folder, matiere):
+    """Charge les PDF de la matière. PLANTE si aucun fichier n'est trouvé."""
+    if not os.path.exists(folder):
+        st.error(f"❌ DOSSIER INTROUVABLE : Le dossier '{folder}' n'existe pas.")
+        st.stop()
     
-    if df_programme is not None and not df_programme.empty:
-        if 'progress_data' not in st.session_state:
-            st.session_state.progress_data = {}
+    prefix = matiere[:4].upper()
+    files = [f for f in os.listdir(folder) if f.upper().startswith(prefix) and f.lower().endswith(".pdf")]
+    
+    # --- LOGIQUE DE STABILITÉ DEMANDÉE ---
+    if not files:
+        st.error(f"🚨 ERREUR DE FICHIER : Aucun PDF trouvé pour la matière '{matiere}'.")
+        st.info(f"Vérifie que tes fichiers commencent bien par '{prefix}_' dans le dossier bibliothèque.")
+        st.stop() # Arrête l'exécution ici
+    
+    full_text = ""
+    for filename in files:
+        with open(os.path.join(folder, filename), "rb") as f:
+            full_text += f"\n--- DOCUMENT : {filename} ---\n"
+            full_text += extract_pdf_text(f)
+            
+    return full_text[:120000]
 
-        toutes_matieres = df_programme['Matiere'].unique().tolist()
-        matieres_selectionnees = st.multiselect("Quelles matières travailler ?", toutes_matieres)
+# --- INTERFACE ---
+
+st.title("🎓 Le Coach Scolaire d'Anna")
+st.caption("Système de continuité pédagogique - Mode Sécurité Activé")
+
+if not os.path.exists("bibliotheque/programme.csv"):
+    st.error("🚨 FICHIER MANQUANT : 'programme.csv' est introuvable.")
+    st.stop()
+
+df_prog = pd.read_csv("bibliotheque/programme.csv", sep=";")
+
+with st.sidebar:
+    st.header("📚 Session de travail")
+    liste_matieres = df_prog["Matiere"].unique()
+    choix_matiere = st.selectbox("Matière", liste_matieres)
+    
+    chapitres = df_prog[df_prog["Matiere"] == choix_matiere]["Chapitre"].tolist()
+    choix_chapitre = st.selectbox("Chapitre", chapitres)
+    
+    st.divider()
+    doc_eleve = st.file_uploader("Document d'exercice (Optionnel)", type="pdf")
+
+sujet = st.text_input("Sujet ou question d'Anna :", placeholder="Ex: C'est quoi un ion ?")
+
+if st.button("🚀 Lancer la séance", type="primary"):
+    with st.spinner("Joris vérifie les sources et prépare le cours..."):
+        # Cette fonction va 'stoppper' l'appli si le fichier est mal nommé
+        contexte_officiel = get_subject_content("bibliotheque", choix_matiere)
+        contexte_exercice = extract_pdf_text(doc_eleve) if doc_eleve else "Aucun document d'exercice fourni."
         
-        if matieres_selectionnees:
+        prompt = f"""
+        Tu es Joris, le tuteur d'Anna (élève de 3ème en instruction à domicile).
+        Anna n'a pas accès à ses professeurs, tu dois être précis et rigoureux.
+
+        CONTEXTE OFFICIEL (Bibliothèque) :
+        {contexte_officiel}
+
+        DEMANDE D'ANNA : {sujet} (Chapitre : {choix_chapitre})
+        EXERCICE FOURNI : {contexte_exercice}
+
+        TON RÔLE :
+        1. Explique la notion en t'appuyant sur les documents officiels.
+        2. Guide-la dans son exercice sans donner les réponses.
+        3. Termine TOUJOURS par une section '### 📝 Petit Quiz de fin' avec 3 questions rapides pour vérifier sa compréhension.
+        4. Sois direct, encourageant et assure-toi qu'elle ne décroche pas.
+        """
+        
+        try:
+            response = model.generate_content(prompt)
             st.markdown("---")
-            st.caption("📍 Où en est-on ?")
-            
-            for matiere in matieres_selectionnees:
-                chapitres_bruts = df_programme[df_programme['Matiere'] == matiere]['Chapitre'].tolist()
-                total_chapitres = len(chapitres_bruts)
-                current_choice = st.session_state.get(f"choix_{matiere}", "(Rien commencé)")
-                
-                if current_choice == "(Rien commencé)":
-                    progress_val = 0
-                else:
-                    try:
-                        options_clean = [clean_chapter_name(i, c) for i, c in enumerate(chapitres_bruts)]
-                        idx = options_clean.index(current_choice)
-                        progress_val = (idx + 1) / total_chapitres
-                    except:
-                        progress_val = 0
-                
-                st.markdown(f"**{matiere}** ({int(progress_val*100)}%)")
-                st.progress(progress_val)
-                
-                options = ["(Rien commencé)"] + [clean_chapter_name(i, c) for i, c in enumerate(chapitres_bruts)]
-                
-                choix = st.selectbox(
-                    f"Chapitre terminé en {matiere}", 
-                    options, 
-                    key=f"choix_{matiere}",
-                    label_visibility="collapsed"
-                )
-                
-                if choix != "(Rien commencé)":
-                    progression_context += f"- {matiere} : '{choix}' ACQUIS.\n"
-                else:
-                    progression_context += f"- {matiere} : Débutant.\n"
-        else:
-            st.caption("👈 Sélectionne une matière pour voir tes jauges !")
-    else:
-        st.warning("⚠️ Fichier 'programme.csv' introuvable.")
-
-# --- DROITE ---
-with col_droite:
-    st.markdown("### 2️⃣ Paramètres de la séance")
-    
-    with st.expander("📂 Document du jour (Devoir PDF)"):
-        user_pdf = st.file_uploader("Glisse le fichier ici", type=["pdf"])
-        user_pdf_content = extract_pdf_text(user_pdf) if user_pdf else ""
-
-    c1, c2 = st.columns(2)
-    with c1:
-        sujet = st.text_input("Sujet ?", placeholder="Laisse vide pour la SUITE logique...")
-    with c2:
-        # SIMPLIFICATION ICI : On enlève les parenthèses
-        humeur = st.selectbox("Énergie ?", ["😴 Chill", "🧐 Curieuse", "🚀 Focus"])
-
-    duree_seance = st.slider("⏳ Durée de la séance (minutes) :", min_value=30, max_value=180, value=45, step=15)
-
-    liste_options_outils = [
-        "🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)",
-        "📺 Vidéo (YouTube/Lumni)", 
-        "📱 iPad (Apps Créatives)", 
-        "📝 Papier/Crayon (Cartes mentales/Schémas)", 
-        "🎲 Jeu/Manip"
-    ]
-    
-    outils_choisis = st.multiselect(
-        "Boîte à outils :",
-        liste_options_outils,
-        default=["🚀 Mix Tout (Vidéo + iPad + Papier + Jeu)"], 
-        placeholder="Ajoute des outils..."
-    )
-
-    final_subject = sujet
-    mode_auto = False
-    if not final_subject and not user_pdf:
-        if progression_context:
-            final_subject = "SUITE"
-            mode_auto = True
-
-    instruction_outils = ""
-    if any("Mix Tout" in outil for outil in outils_choisis):
-        instruction_outils = "UTILISE TOUS LES OUTILS DISPONIBLES."
-    else:
-        instruction_outils = f"Outils imposés : {', '.join(outils_choisis)}"
-
-    # --- 6. LE SYSTEM PROMPT (ÉPURÉ) ---
-    system_prompt = f"""
-    ROLE : Coach Pédagogique personnel d'Anna (14 ans, 3ème, Réunion).
-    IDENTITÉ : Enseignant expérimenté + Expert Neuro-éducation.
-    
-    RÈGLES DE TON :
-    - **TUTOIEMENT OBLIGATOIRE** ("Salut Anna !").
-    - Ton chaleureux, allié, mais sérieux sur le fond.
-    
-    PARAMÈTRE TEMPS : {duree_seance} MINUTES.
-    
-    SÉCURITÉ : Liens YouTube RECHERCHE uniquement (Yvan Monka, Lumni...).
-    
-    DONNÉES :
-    - Progression : {progression_context if progression_context else "Non spécifiée"}
-    - Bibliothèque : {biblio_text}
-    - Document : {user_pdf_content}
-    - Outils : {instruction_outils}
-    
-    STRUCTURE DE LA FICHE :
-    1. 👋 **Check-Up**.
-    
-    2. 🥑 **[TITRE ACCROCHEUR SUR LE SUJET]** (Pas de "Accroche Fun").
-    
-    3. ⏱️ **La Mission** (Activités calibrées).
-    
-    4. 🥚 **Le Saviez-vous ?** : Une anecdote culturelle courte, surprenante ou drôle liée au sujet (pour briller en société).
-    
-    5. ✨ **Défi Créatif**.
-    
-    6. ❓ **LE QUIZ FINAL** (Réponses cachées dans <details>).
-    """
-
-    if st.button("🚀 Lancer la séance", type="primary"):
-        if not final_subject and not user_pdf:
-            st.warning("⚠️ Indique un sujet, ou sélectionne une matière à gauche !")
-        else:
-            if mode_auto:
-                st.success("✅ Sujet non renseigné : Je lance la SUITE logique du programme !")
-            
-            with st.spinner(f"Préparation d'une séance de {duree_seance} minutes pour Anna..."):
-                try:
-                    requete = f"Sujet: {final_subject}. Mood: {humeur}. Outils: {instruction_outils}. Instructions: {system_prompt}"
-                    response = model.generate_content(requete)
-                    
-                    st.balloons()
-                    
-                    st.markdown("---")
-                    st.markdown(response.text, unsafe_allow_html=True)
-                    
-                    html_data = create_download_link(response.text)
-                    st.download_button("📥 Télécharger la fiche", html_data, "Seance_Anna.html", "text/html")
-                    
-                except Exception as e:
-                    st.error(f"Erreur : {e}")
-
-st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown(response.text)
+        except Exception as e:
+            st.error(f"Erreur technique Gemini : {e}")
