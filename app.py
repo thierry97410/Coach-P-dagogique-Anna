@@ -4,116 +4,122 @@ import os
 from PyPDF2 import PdfReader
 import google.generativeai as genai
 
-# --- 1. CONFIGURATION VISUELLE ET TECHNIQUE ---
-st.set_page_config(page_title="Le Salon d'Anna", layout="wide")
+# --- 1. DESIGN & CONFIGURATION ---
+st.set_page_config(page_title="Anna : Mon Assistant", layout="wide")
 
-# Injection de style pour adoucir l'interface (Anna-friendly)
 st.markdown("""
     <style>
-    .stApp { background-color: #F0F4F8; }
-    .stButton>button { background-color: #4A90E2; color: white; border-radius: 20px; border: none; }
-    .stTextInput>div>div>input { border-radius: 15px; }
-    h1 { color: #2C3E50; font-family: 'Helvetica Neue', sans-serif; }
-    .stAlert { border-radius: 15px; border: none; }
+    .stApp { background-color: #1E293B; color: #F8FAFC; }
+    h1, h2, h3 { color: #FDE047 !important; }
+    [data-testid="stSidebar"] { background-color: #0F172A; border-right: 1px solid #334155; }
+    .stButton>button { background-color: #FDE047; color: #0F172A; font-weight: bold; border-radius: 8px; }
+    .stDownloadButton>button { background-color: #10B981; color: white; border-radius: 8px; }
+    .stCheckbox { background-color: #334155; padding: 10px; border-radius: 10px; margin: 5px 0; }
     </style>
     """, unsafe_allow_html=True)
 
 if "GOOGLE_API_KEY" not in st.secrets:
-    st.error("Clé API manquante. Demande à Thierry de vérifier les Secrets.")
+    st.error("Clé API manquante.")
     st.stop()
 
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('gemini-1.5-pro')
 
-# --- 2. LOGIQUE DE LECTURE ---
+# --- 2. FONCTIONS ---
 
 def extract_pdf_text(file):
     try:
         reader = PdfReader(file)
-        text = ""
-        for page in reader.pages:
-            content = page.extract_text()
-            if content: text += content + "\n"
-        return text
+        return "".join([page.extract_text() for page in reader.pages if page.extract_text()])
     except: return ""
 
-def get_subject_content(folder, matiere):
-    """Charge les sources. Si erreur, affiche un message doux mais bloque."""
-    prefix = matiere[:4].upper()
-    if not os.path.exists(folder):
-        st.info(f"✨ Oh ! Le dossier '{folder}' n'est pas encore prêt. Thierry doit le créer.")
-        st.stop()
-    
-    files = [f for f in os.listdir(folder) if f.upper().startswith(prefix) and f.lower().endswith(".pdf")]
-    
-    if not files:
-        # Erreur stylisée, moins agressive que le rouge 'crash'
-        st.warning(f"🍃 **Petit contretemps** : Je n'ai pas trouvé le cours de '{matiere}' dans ma bibliothèque. Thierry doit vérifier le nom des fichiers (préfixe {prefix}_).")
-        st.stop()
-    
-    full_text = ""
-    for filename in files:
-        with open(os.path.join(folder, filename), "rb") as f:
-            full_text += extract_pdf_text(f)
-    return full_text[:100000]
+def load_all_contexts(folder, matieres_list):
+    combined_text = ""
+    if not os.path.exists(folder): return ""
+    for mat in matieres_list:
+        prefix = mat[:4].upper()
+        files = [f for f in os.listdir(folder) if f.upper().startswith(prefix) and f.lower().endswith(".pdf")]
+        for filename in files:
+            with open(os.path.join(folder, filename), "rb") as f:
+                combined_text += f"\n--- {mat} ---\n" + extract_pdf_text(f)
+    return combined_text[:150000]
 
 # --- 3. INTERFACE ---
 
-st.title("🌟 Le Salon d'apprentissage d'Anna")
-st.write(f"Bonjour Anna ! Prête pour une petite séance ? Choisis ta matière et posons-nous.")
+st.title("🎓 Anna : mon assistant pédagogique")
 
 CSV_PATH = "bibliotheque/programme.csv"
 if os.path.exists(CSV_PATH):
-    df_prog = pd.read_csv(CSV_PATH, sep=",")
-    df_prog.columns = df_prog.columns.str.strip()
+    df = pd.read_csv(CSV_PATH, sep=",")
+    df.columns = df.columns.str.strip()
 else:
-    st.error("Le fichier programme.csv est introuvable.")
+    st.error("Fichier programme.csv introuvable.")
     st.stop()
 
 with st.sidebar:
-    st.header("📍 Ton parcours")
-    matieres = df_prog["Matiere"].unique()
-    choix_mat = st.selectbox("On travaille quoi ?", matieres)
+    st.header("⚙️ Ma Séance")
+    matieres_dispos = df["Matiere"].unique()
+    choix_matieres = st.multiselect("Matières :", matieres_dispos, default=[matieres_dispos[0]])
     
-    chaps = df_prog[df_prog["Matiere"] == choix_mat]["Chapitre"].tolist()
-    choix_chap = st.selectbox("Quel chapitre précisément ?", chaps)
+    # Durée automatique
+    nb_mat = len(choix_matieres)
+    duree_suggeree = 15 if nb_mat <= 1 else (30 if nb_mat == 2 else 45)
+    duree = st.select_slider("Durée :", options=["15 min", "30 min", "45 min", "1h", "1h30"], value=f"{duree_suggeree} min")
+    
+    supports = st.multiselect("Supports :", ["Écrit", "Vidéo (Lumni/YouTube)", "Mixte"], default=["Mixte"])
     
     st.divider()
-    doc_eleve = st.file_uploader("Un document à me montrer ? (PDF)", type="pdf")
+    doc_eleve = st.file_uploader("Document à analyser (PDF)", type="pdf")
 
-# Zone de texte principale
-question_anna = st.text_area("Dis-moi ce que tu veux comprendre aujourd'hui ou ce qui te pose problème :", 
-                             placeholder="Ex: Je ne comprends pas bien comment calculer une aire...", height=100)
+besoin = st.text_area("Sur quoi veux-tu te concentrer Anna ?", placeholder="Ex: Les guerres mondiales...", height=100)
 
-if st.button("✨ Commencer la séance"):
-    if not question_anna and not doc_eleve:
-        st.info("Dis-moi juste un petit mot sur ce que tu veux faire pour que je puisse t'aider !")
+if st.button("🚀 C'est parti !"):
+    if not besoin and not doc_eleve:
+        st.warning("Indique un sujet pour commencer.")
     else:
-        with st.spinner("Je prépare tes explications..."):
-            contexte_bib = get_subject_content("bibliotheque", choix_mat)
+        with st.spinner("Joris prépare ton parcours..."):
+            contexte_bib = load_all_contexts("bibliotheque", choix_matieres)
             contexte_exo = extract_pdf_text(doc_eleve) if doc_eleve else ""
 
             prompt = f"""
-            Tu es Joris, le tuteur bienveillant d'Anna (14 ans, 3ème). 
-            Elle travaille seule à la maison. Ton ton est amical, encourageant, clair, mais tu gardes la rigueur nécessaire.
+            Tu es Joris, l'assistant d'Anna. 
+            DURÉE : {duree} | MATIÈRES : {', '.join(choix_matieres)} | SUPPORTS : {', '.join(supports)}
             
-            MATIÈRE : {choix_mat} | CHAPITRE : {choix_chap}
-            SOURCES : {contexte_bib}
-            TRAVAIL D'ANNA : {question_anna} | {contexte_exo}
-
             MISSION :
-            1. Explique simplement la notion en utilisant les documents officiels.
-            2. Aide-la pas à pas sans donner la solution.
-            3. Utilise des emojis pour rendre le texte vivant.
-            4. FINIS PAR : '### 💡 Le petit défi pour voir si tu as compris' (3 questions rapides).
+            1. Propose 1 ou 2 thèmes de recherche ultra-précis pour Lumni et YouTube (50-60% du temps).
+            2. Donne un résumé structuré basé sur les PDF : {contexte_bib}
+            3. Termine par un quiz de 3 questions.
+            4. TON TON : Amical, direct, encourageant.
             """
 
-            try:
-                response = model.generate_content(prompt)
-                st.markdown("---")
-                st.markdown(response.text)
-            except Exception as e:
-                st.error("L'IA se repose un instant. Réessaie dans une minute !")
+            response = model.generate_content(prompt)
+            st.session_state['last_response'] = response.text
+            st.session_state['search_query'] = besoin
 
-# --- FIN ---
-st.caption("Fait avec soin pour Anna.")
+# --- 4. JOURNAL DE BORD ET ACTIONS (Post-Génération) ---
+
+if 'last_response' in st.session_state:
+    st.markdown("---")
+    
+    # Zone d'outils interactifs
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("📋 Ton Journal de Bord")
+        st.checkbox("J'ai trouvé et regardé la vidéo conseillée 📺")
+        st.checkbox("J'ai lu le résumé de Joris 📖")
+        st.checkbox("J'ai répondu au quiz de fin ✅")
+    
+    with col2:
+        st.subheader("🔗 Liens Rapides")
+        q = st.session_state['search_query']
+        st.link_button("🔍 Chercher sur Lumni", f"https://www.lumni.fr/recherche?query={q}")
+        st.link_button("🎥 Chercher sur YouTube Premium", f"https://www.youtube.com/results?search_query={q}")
+        
+        # Mode "Hors-ligne" : Téléchargement de la séance
+        st.download_button("📥 Sauvegarder la séance (PDF/Texte)", 
+                           data=st.session_state['last_response'], 
+                           file_name=f"seance_anna_{choix_matieres[0]}.txt",
+                           mime="text/plain")
+
+    st.markdown("---")
+    st.markdown(st.session_state['last_response'])
