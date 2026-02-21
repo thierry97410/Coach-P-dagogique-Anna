@@ -10,16 +10,12 @@ from fpdf import FPDF
 # --- 1. CONFIGURATION & SESSION STATE ---
 st.set_page_config(page_title="L'Espace d'Anna", layout="wide")
 
-# Initialisation des variables de navigation
-if 'current_mat' not in st.session_state:
-    st.session_state.current_mat = None
-if 'current_chap' not in st.session_state:
-    st.session_state.current_chap = None
-if 'session_complete' not in st.session_state:
-    st.session_state.session_complete = False
+if 'current_mat' not in st.session_state: st.session_state.current_mat = None
+if 'current_chap' not in st.session_state: st.session_state.current_chap = None
+if 'session_complete' not in st.session_state: st.session_state.session_complete = False
 
 if "GOOGLE_API_KEY" not in st.secrets:
-    st.error("Clé API manquante.")
+    st.error("Clé API manquante dans les secrets.")
     st.stop()
 
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
@@ -30,9 +26,10 @@ model = genai.GenerativeModel('gemini-2.5-flash')
 def create_pdf(text):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    clean_text = text.encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 10, txt=clean_text)
+    pdf.set_font("Arial", size=11)
+    clean_text = text.replace('**', '').replace('#', '').replace('`', '')
+    clean_text = clean_text.encode('latin-1', 'replace').decode('latin-1')
+    pdf.multi_cell(0, 8, txt=clean_text)
     return bytes(pdf.output())
 
 def extract_pdf_text(file):
@@ -63,67 +60,73 @@ if os.path.exists(CSV_PATH):
     df = pd.read_csv(CSV_PATH, sep=",")
     df.columns = df.columns.str.strip()
 else:
-    st.error("Programme CSV manquant.")
+    st.error("Fichier programme.csv manquant.")
     st.stop()
 
-# Synchronisation de la navigation
-if st.session_state.current_mat is None:
-    st.session_state.current_mat = df["Matiere"].unique()[0]
-if st.session_state.current_chap is None:
-    st.session_state.current_chap = df[df["Matiere"] == st.session_state.current_mat]["Chapitre"].tolist()[0]
+# Synchronisation navigation
+if st.session_state.current_mat is None: st.session_state.current_mat = df["Matiere"].unique()[0]
+if st.session_state.current_chap is None: st.session_state.current_chap = df[df["Matiere"] == st.session_state.current_mat]["Chapitre"].tolist()[0]
 
 with st.sidebar:
     st.header("⚙️ Pilotage")
     choix_mat = st.selectbox("Matière :", df["Matiere"].unique(), 
-                             index=list(df["Matiere"].unique()).index(st.session_state.current_mat),
-                             key="mat_nav")
-    
+                             index=list(df["Matiere"].unique()).index(st.session_state.current_mat), key="mat_nav")
     chapitres = df[df["Matiere"] == choix_mat]["Chapitre"].tolist()
     choix_chap = st.radio("Chapitre :", chapitres, 
-                          index=chapitres.index(st.session_state.current_chap) if st.session_state.current_chap in chapitres else 0,
-                          key="chap_nav")
+                          index=chapitres.index(st.session_state.current_chap) if st.session_state.current_chap in chapitres else 0, key="chap_nav")
     
     st.session_state.current_mat = choix_mat
     st.session_state.current_chap = choix_chap
 
     st.divider()
-    st.write("**Préférences d'Anna :**")
-    format_synthese = st.selectbox("Format de synthèse :", ["Carte Mentale", "Tableau de synthèse"])
-    angle = st.selectbox("Angle d'attaque :", ["📜 Histoire", "🧠 Logique", "🛠 Application"])
+    st.write("**Esthétique & Analyse :**")
+    theme_mermaid = st.selectbox("Style des infographies :", ["default", "forest", "dark", "neutral"])
+    angle = st.selectbox("Angle d'attaque :", ["📜 Par l'Histoire", "🧠 Par la Logique", "🛠 Par l'Application"])
+    
+    st.divider()
     duree = st.select_slider("Densité :", options=["15 min", "30 min", "1h", "1h30"], value="30 min")
-    doc_eleve = st.file_uploader("📂 Document support (PDF)", type="pdf")
+    doc_eleve = st.file_uploader("📂 Support PDF", type="pdf")
 
 # --- 4. L'ESPACE D'ANNA ---
 
 st.subheader(f"📍 Séance : {st.session_state.current_chap}")
-besoin_anna = st.text_area("Message pour Joris :", placeholder="Une question ? Une envie ? Dis-moi tout...", height=80)
+besoin_anna = st.text_area("Anna, dis à Joris ce que tu as sur le cœur ou tes questions :", height=80)
 
 col_actions = st.columns([1, 1, 3])
 with col_actions[0]: lancer = st.button("🚀 Lancer l'exploration")
 with col_actions[1]: pause_zen = st.button("🧘 Pause Zen")
 
 if lancer:
-    st.session_state.session_complete = False # Reset au lancement
-    with st.spinner("Joris tisse les liens de ta séance..."):
+    st.session_state.session_complete = False
+    with st.spinner("Joris tisse les liens et dessine tes structures..."):
         contexte_bib, liste_sources = load_all_contexts("bibliotheque", st.session_state.current_mat)
         contexte_exo = extract_pdf_text(doc_eleve) if doc_eleve else ""
 
         prompt = f"""
-        Tu es Joris, l'allié d'Anna (14 ans, HPI). Tu es un psycho-pédagogue curateur respectueux des créateurs humains.
+        Tu es Joris, l'allié d'Anna (14 ans, HPI). 
+        Anna a besoin de complexité, de sens et d'intégrité intellectuelle.
+        
         MESSAGE D'ANNA : "{besoin_anna}"
         SÉANCE : {st.session_state.current_chap} ({st.session_state.current_mat}) | ANGLE : {angle}.
         
-        STRUCTURE DENSE :
-        1. **Accueil & Sens** : Réponds à son message et explique l'utilité du sujet.
-        2. **Approfondissement (Le Cours)** : Analyse complexe (sources : {contexte_bib}).
-        3. **Le Lexique des Curieux** : Glossaire des termes techniques difficiles rencontrés.
-        4. **Interconnexions** : Un lien fort avec une autre discipline.
-        5. **Support Humain (Vidéo)** : Titre Lumni/YouTube précis.
-        6. **L'Enquête de l'Esprit** : Défi d'analyse ou de logique.
-        7. **### 📝 Synthèse : {format_synthese}** : Schéma textuel détaillé.
-        8. **Sources & Crédits** : Fichiers {', '.join(liste_sources)} et auteurs.
-        9. **La Suite Logique** : Suggère un chapitre d'une AUTRE matière lié logiquement.
-           FORMAT RECOMMANDATION : "RECO:[NOM_MATIERE]|[NOM_CHAPITRE]"
+        INSTRUCTIONS DE MISE EN FORME :
+        - Utilise des titres de tailles variées (# , ## , ###).
+        - Mets en **gras** les concepts essentiels.
+        - Génère DEUX infographies Mermaid (```mermaid ... ```) : 
+            1. Une pour la STRUCTURE LOGIQUE (mindmap ou graph TD).
+            2. Une pour la CHRONOLOGIE HISTORIQUE (timeline ou graph LR).
+        
+        STRUCTURE DE LA RÉPONSE :
+        1. # Accueil & Sens : Pourquoi ce sujet est fondamental.
+        2. # Exploration Approfondie : Analyse dense basée sur {contexte_bib}.
+        3. ## 📖 Le Lexique des Curieux : Glossaire précis des termes complexes.
+        4. ## Interconnexions : Pont avec une autre discipline.
+        5. ## Support Humain (Vidéo) : Titre précis.
+        6. ## L'Enquête de l'Esprit : Défi d'analyse critique.
+        7. # 🧠 Analyse Logique (Infographie) : Bloc Mermaid 1.
+        8. # ⏳ Analyse Chronologique (Infographie) : Bloc Mermaid 2.
+        9. ## RECO:[NOM_MATIERE]|[NOM_CHAPITRE] (Pour la suite).
+        10. ### Sources & Crédits : Fichiers {', '.join(liste_sources)} et auteurs.
         """
         try:
             response = model.generate_content(prompt)
@@ -134,31 +137,45 @@ if lancer:
         except Exception as e:
             st.error(f"Erreur : {e}")
 
-# --- 5. RÉSULTATS & NAVIGATION FLUIDE ---
+# --- 5. AFFICHAGE ---
 
 if 'resp' in st.session_state:
     st.divider()
-    st.markdown(st.session_state['resp'])
+    
+    # Parsing des blocs Mermaid pour injecter le thème choisi
+    full_text = st.session_state['resp']
+    parts = re.split(r'(```mermaid.*?```)', full_text, flags=re.DOTALL)
+    
+    for part in parts:
+        if part.startswith('```mermaid'):
+            mermaid_code = part.replace('```mermaid', '').replace('```', '').strip()
+            # Injection du thème
+            theme_config = f"%%{{init: {{'theme': '{theme_mermaid}'}}}}%%\n"
+            final_mermaid = theme_config + mermaid_code
+            
+            with st.expander("🔍 Agrandir l'infographie (Plein écran)", expanded=True):
+                st.mermaid(final_mermaid)
+        else:
+            # Nettoyage de la recommandation pour ne pas l'afficher deux fois
+            clean_part = re.sub(r'RECO:.*?\|.*', '', part)
+            st.markdown(clean_part)
     
     st.divider()
-    st.subheader("🏁 Clap de fin")
     if not st.session_state.session_complete:
-        if st.button("✨ J'ai terminé mon exploration"):
+        if st.button("✨ J'ai terminé cette exploration"):
             st.session_state.session_complete = True
             st.rerun()
     else:
-        st.success("Bravo Anna ! Tu as musclé tes connaissances aujourd'hui.")
         if 'reco_data' in st.session_state:
-            mat_suivante, chap_suivant = st.session_state.reco_data
-            if st.button(f"➡️ Suivre le fil vers : {chap_suivant} ({mat_suivante})"):
-                st.session_state.current_mat = mat_suivante
-                st.session_state.current_chap = chap_suivant
+            m, c = st.session_state.reco_data
+            if st.button(f"➡️ Suivre le fil vers : {c} ({m})"):
+                st.session_state.current_mat, st.session_state.current_chap = m, c
                 st.session_state.session_complete = False
                 st.rerun()
 
-    col_dl = st.columns(2)
-    with col_dl[0]:
-        st.link_button("🔍 Chercher la vidéo", f"https://www.youtube.com/results?search_query=3eme {st.session_state.current_mat} {st.session_state.current_chap}")
-    with col_dl[1]:
+    col_f = st.columns(2)
+    with col_f[0]:
+        st.link_button("🎥 Voir la vidéo humaine", f"[https://www.youtube.com/results?search_query=3eme](https://www.youtube.com/results?search_query=3eme) {st.session_state.current_mat} {st.session_state.current_chap}")
+    with col_f[1]:
         pdf_bytes = create_pdf(st.session_state['resp'])
-        st.download_button("📥 Enregistrer ma fiche", data=pdf_bytes, file_name=f"Anna_{st.session_state.current_mat}.pdf")
+        st.download_button("📥 Fiche PDF", data=pdf_bytes, file_name=f"Anna_{st.session_state.current_mat}.pdf")
