@@ -2,12 +2,21 @@ import streamlit as st
 import pandas as pd
 import os
 import io
+import re
 from PyPDF2 import PdfReader
 import google.generativeai as genai
 from fpdf import FPDF
 
-# --- 1. CONFIGURATION ---
+# --- 1. CONFIGURATION & SESSION STATE ---
 st.set_page_config(page_title="L'Espace d'Anna", layout="wide")
+
+# Initialisation des variables de navigation
+if 'current_mat' not in st.session_state:
+    st.session_state.current_mat = None
+if 'current_chap' not in st.session_state:
+    st.session_state.current_chap = None
+if 'session_complete' not in st.session_state:
+    st.session_state.session_complete = False
 
 if "GOOGLE_API_KEY" not in st.secrets:
     st.error("Clé API manquante.")
@@ -54,93 +63,102 @@ if os.path.exists(CSV_PATH):
     df = pd.read_csv(CSV_PATH, sep=",")
     df.columns = df.columns.str.strip()
 else:
+    st.error("Programme CSV manquant.")
     st.stop()
 
+# Synchronisation de la navigation
+if st.session_state.current_mat is None:
+    st.session_state.current_mat = df["Matiere"].unique()[0]
+if st.session_state.current_chap is None:
+    st.session_state.current_chap = df[df["Matiere"] == st.session_state.current_mat]["Chapitre"].tolist()[0]
+
 with st.sidebar:
-    st.header("⚙️ Pilotage (Papa)")
-    matieres = df["Matiere"].unique()
-    choix_mat = st.selectbox("Matière :", matieres)
+    st.header("⚙️ Pilotage")
+    choix_mat = st.selectbox("Matière :", df["Matiere"].unique(), 
+                             index=list(df["Matiere"].unique()).index(st.session_state.current_mat),
+                             key="mat_nav")
+    
     chapitres = df[df["Matiere"] == choix_mat]["Chapitre"].tolist()
-    choix_chap = st.radio("Chapitre ciblé :", chapitres)
+    choix_chap = st.radio("Chapitre :", chapitres, 
+                          index=chapitres.index(st.session_state.current_chap) if st.session_state.current_chap in chapitres else 0,
+                          key="chap_nav")
+    
+    st.session_state.current_mat = choix_mat
+    st.session_state.current_chap = choix_chap
+
     st.divider()
-    duree = st.select_slider("Densité de la séance :", options=["15 min", "30 min", "1h", "1h30"], value="30 min")
-    doc_eleve = st.file_uploader("📂 Support externe (PDF)", type="pdf")
+    st.write("**Préférences d'Anna :**")
+    format_synthese = st.selectbox("Format de synthèse :", ["Carte Mentale", "Tableau de synthèse"])
+    angle = st.selectbox("Angle d'attaque :", ["📜 Histoire", "🧠 Logique", "🛠 Application"])
+    duree = st.select_slider("Densité :", options=["15 min", "30 min", "1h", "1h30"], value="30 min")
+    doc_eleve = st.file_uploader("📂 Document support (PDF)", type="pdf")
 
 # --- 4. L'ESPACE D'ANNA ---
 
-st.subheader(f"📍 Sujet : {choix_chap}")
-st.write("🗨️ **Anna**, c'est ton moment. Pose tes questions, exprime tes doutes ou tes envies ici :")
-besoin_anna = st.text_area("Ton message pour Joris :", height=100)
+st.subheader(f"📍 Séance : {st.session_state.current_chap}")
+besoin_anna = st.text_area("Message pour Joris :", placeholder="Une question ? Une envie ? Dis-moi tout...", height=80)
 
 col_actions = st.columns([1, 1, 3])
 with col_actions[0]: lancer = st.button("🚀 Lancer l'exploration")
 with col_actions[1]: pause_zen = st.button("🧘 Pause Zen")
 
-if pause_zen:
-    with st.spinner("Joris te propose une déconnexion intelligente..."):
-        prompt_zen = "Tu es Joris. Anna a besoin d'une pause. Propose une anecdote complexe et fascinante sur l'histoire des idées, de la science ou des civilisations. Pas de création, juste de la découverte pure."
-        try:
-            res_zen = model.generate_content(prompt_zen)
-            st.session_state['resp_zen'] = res_zen.text
-            if 'resp' in st.session_state: del st.session_state['resp']
-        except: st.error("Erreur.")
-
 if lancer:
-    with st.spinner("Joris prépare une séance à haute densité intellectuelle..."):
-        contexte_bib, liste_sources = load_all_contexts("bibliotheque", choix_mat)
+    st.session_state.session_complete = False # Reset au lancement
+    with st.spinner("Joris tisse les liens de ta séance..."):
+        contexte_bib, liste_sources = load_all_contexts("bibliotheque", st.session_state.current_mat)
         contexte_exo = extract_pdf_text(doc_eleve) if doc_eleve else ""
 
-        # PROMPT RECENTRÉ SUR LA COMPLEXITÉ ET L'ANALYSE
         prompt = f"""
-        Tu es Joris, l'allié intellectuel d'Anna (14 ans, 3ème, profil HPI). 
-        Anna est une artiste, mais elle n'a PAS besoin que tu lui demandes de créer des oeuvres. 
-        Elle a besoin que tu la stimules par la complexité, la logique et les liens entre les savoirs.
-        
+        Tu es Joris, l'allié d'Anna (14 ans, HPI). Tu es un psycho-pédagogue curateur respectueux des créateurs humains.
         MESSAGE D'ANNA : "{besoin_anna}"
-        SÉANCE : {choix_chap} ({choix_mat}) | DURÉE : {duree}.
+        SÉANCE : {st.session_state.current_chap} ({st.session_state.current_mat}) | ANGLE : {angle}.
         
-        STRUCTURE DE LA RÉPONSE (DENSE ET RICHE) :
-        1. **L'Origine et le Sens** : Pourquoi ce concept a-t-il été inventé ? Quel problème humain ou scientifique résout-il ? Fais des ponts avec d'autres matières.
-        2. **Analyse Approfondie (Le Cours)** : Développe les notions clés avec précision. Utilise les documents : {contexte_bib}. Ne simplifie pas les termes techniques.
-        3. **Ressource Humaine (Vidéo)** : Propose un documentaire, une conférence ou une expérience filmée (Lumni/YouTube). Donne le titre exact.
-        4. **L'Enquête de l'Esprit** : Propose un défi de réflexion pure ou d'analyse critique. (ex: "Compare deux théories", "Trouve l'erreur logique dans...", "Déduis la suite de ce raisonnement..."). Pas de dessin, pas de création.
-        5. **Le Point de Controverse** : Un fait historique ou scientifique méconnu, complexe, qui demande de l'esprit critique.
-        6. **### 📝 Quiz de Haute Fidélité** : 3 questions complexes qui vérifient la compréhension des mécanismes, pas juste le stockage d'infos.
-        7. **Sources & Crédits** : Liste les PDF utilisés ({', '.join(liste_sources)}) et les auteurs des ressources citées.
-
-        TON : Brillant, complice, tutoiement respectueux. Traite-la comme une adulte en devenir.
+        STRUCTURE DENSE :
+        1. **Accueil & Sens** : Réponds à son message et explique l'utilité du sujet.
+        2. **Approfondissement (Le Cours)** : Analyse complexe (sources : {contexte_bib}).
+        3. **Le Lexique des Curieux** : Glossaire des termes techniques difficiles rencontrés.
+        4. **Interconnexions** : Un lien fort avec une autre discipline.
+        5. **Support Humain (Vidéo)** : Titre Lumni/YouTube précis.
+        6. **L'Enquête de l'Esprit** : Défi d'analyse ou de logique.
+        7. **### 📝 Synthèse : {format_synthese}** : Schéma textuel détaillé.
+        8. **Sources & Crédits** : Fichiers {', '.join(liste_sources)} et auteurs.
+        9. **La Suite Logique** : Suggère un chapitre d'une AUTRE matière lié logiquement.
+           FORMAT RECOMMANDATION : "RECO:[NOM_MATIERE]|[NOM_CHAPITRE]"
         """
         try:
             response = model.generate_content(prompt)
             st.session_state['resp'] = response.text
-            if 'resp_zen' in st.session_state: del st.session_state['resp_zen']
+            reco_match = re.search(r"RECO:(.*?)\|(.*)", response.text)
+            if reco_match:
+                st.session_state['reco_data'] = (reco_match.group(1).strip(), reco_match.group(2).strip())
         except Exception as e:
             st.error(f"Erreur : {e}")
 
-# --- 5. AFFICHAGE ---
-
-if 'resp_zen' in st.session_state:
-    st.info(st.session_state['resp_zen'])
-    if st.button("✨ Reprendre"):
-        del st.session_state['resp_zen']
-        st.rerun()
+# --- 5. RÉSULTATS & NAVIGATION FLUIDE ---
 
 if 'resp' in st.session_state:
     st.divider()
-    st.subheader("✅ Suivi de ta séance")
-    c1, c2, c3 = st.columns(3)
-    with c1: st.checkbox("Concept maîtrisé 🧭")
-    with c2: st.checkbox("Enquête résolue 🧠")
-    with c3: st.checkbox("Quiz validé ✨")
-    
-    col_links = st.columns(2)
-    with col_links[0]:
-        st.link_button("🔍 Explorer les sources humaines", f"https://www.youtube.com/results?search_query=3eme {choix_mat} {choix_chap}")
-    with col_links[1]:
-        try:
-            pdf_bytes = create_pdf(st.session_state['resp'])
-            st.download_button("📥 Télécharger la fiche d'approfondissement (PDF)", data=pdf_bytes, file_name=f"Anna_{choix_mat}.pdf")
-        except: st.warning("PDF indisponible.")
-
-    st.markdown("---")
     st.markdown(st.session_state['resp'])
+    
+    st.divider()
+    st.subheader("🏁 Clap de fin")
+    if not st.session_state.session_complete:
+        if st.button("✨ J'ai terminé mon exploration"):
+            st.session_state.session_complete = True
+            st.rerun()
+    else:
+        st.success("Bravo Anna ! Tu as musclé tes connaissances aujourd'hui.")
+        if 'reco_data' in st.session_state:
+            mat_suivante, chap_suivant = st.session_state.reco_data
+            if st.button(f"➡️ Suivre le fil vers : {chap_suivant} ({mat_suivante})"):
+                st.session_state.current_mat = mat_suivante
+                st.session_state.current_chap = chap_suivant
+                st.session_state.session_complete = False
+                st.rerun()
+
+    col_dl = st.columns(2)
+    with col_dl[0]:
+        st.link_button("🔍 Chercher la vidéo", f"https://www.youtube.com/results?search_query=3eme {st.session_state.current_mat} {st.session_state.current_chap}")
+    with col_dl[1]:
+        pdf_bytes = create_pdf(st.session_state['resp'])
+        st.download_button("📥 Enregistrer ma fiche", data=pdf_bytes, file_name=f"Anna_{st.session_state.current_mat}.pdf")
