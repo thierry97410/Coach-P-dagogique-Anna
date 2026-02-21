@@ -33,60 +33,52 @@ def extract_pdf_text(file):
     except: return ""
 
 def load_all_contexts(folder, matiere):
-    """Charge les PDF et retourne le texte ainsi que la liste des fichiers sources."""
     combined_text = ""
     sources_utilisees = []
     if not os.path.exists(folder): return "", []
-    
     prefix = matiere[:4].upper()
     files = [f for f in os.listdir(folder) if f.upper().startswith(prefix) and f.lower().endswith(".pdf")]
-    
     for filename in files:
         with open(os.path.join(folder, filename), "rb") as f:
-            combined_text += f"\n--- DOCUMENT : {filename} ---\n"
+            combined_text += f"\n--- SOURCE : {filename} ---\n"
             combined_text += extract_pdf_text(f)
             sources_utilisees.append(filename)
-            
-    return combined_text[:120000], sources_utilisees
+    return combined_text[:150000], sources_utilisees
 
-# --- 3. INTERFACE ---
+# --- 3. INTERFACE DE PILOTAGE ---
 
-st.title("🌟 Mon Espace de Découverte")
+st.title("🎓 L'Espace d'Exploration d'Anna")
 
 CSV_PATH = "bibliotheque/programme.csv"
 if os.path.exists(CSV_PATH):
     df = pd.read_csv(CSV_PATH, sep=",")
     df.columns = df.columns.str.strip()
 else:
-    st.error("Fichier programme.csv introuvable.")
     st.stop()
 
 with st.sidebar:
-    st.header("⚙️ Configuration")
+    st.header("⚙️ Pilotage (Papa)")
     matieres = df["Matiere"].unique()
     choix_mat = st.selectbox("Matière :", matieres)
-    
     chapitres = df[df["Matiere"] == choix_mat]["Chapitre"].tolist()
-    choix_chap = st.radio("Chapitre à explorer :", chapitres)
-    
+    choix_chap = st.radio("Chapitre ciblé :", chapitres)
     st.divider()
-    duree = st.select_slider("Temps prévu :", options=["15 min", "30 min", "1h"], value="30 min")
-    doc_eleve = st.file_uploader("📂 Joindre un document (PDF)", type="pdf")
+    duree = st.select_slider("Densité de la séance :", options=["15 min", "30 min", "1h", "1h30"], value="30 min")
+    doc_eleve = st.file_uploader("📂 Support externe (PDF)", type="pdf")
 
 # --- 4. L'ESPACE D'ANNA ---
 
-st.subheader(f"📍 Séance : {choix_chap}")
-
-st.write("🗨️ **Anna, c'est ton espace.** Pose ta question ou dis à Joris comment tu te sens :")
-besoin_anna = st.text_area("Ton message :", height=100)
+st.subheader(f"📍 Sujet : {choix_chap}")
+st.write("🗨️ **Anna**, c'est ton moment. Pose tes questions, exprime tes doutes ou tes envies ici :")
+besoin_anna = st.text_area("Ton message pour Joris :", height=100)
 
 col_actions = st.columns([1, 1, 3])
-with col_actions[0]: lancer = st.button("🚀 Lancer la séance")
+with col_actions[0]: lancer = st.button("🚀 Lancer l'exploration")
 with col_actions[1]: pause_zen = st.button("🧘 Pause Zen")
 
 if pause_zen:
-    with st.spinner("Joris prépare un petit moment de calme..."):
-        prompt_zen = "Tu es Joris, l'allié d'Anna. Propose une pause fascinante sur l'art ou la science créée par des humains. Bref et doux."
+    with st.spinner("Joris te propose une déconnexion intelligente..."):
+        prompt_zen = "Tu es Joris. Anna a besoin d'une pause. Propose une anecdote complexe et fascinante sur l'histoire des idées, de la science ou des civilisations. Pas de création, juste de la découverte pure."
         try:
             res_zen = model.generate_content(prompt_zen)
             st.session_state['resp_zen'] = res_zen.text
@@ -94,28 +86,29 @@ if pause_zen:
         except: st.error("Erreur.")
 
 if lancer:
-    with st.spinner("Joris prépare ton parcours éthique..."):
+    with st.spinner("Joris prépare une séance à haute densité intellectuelle..."):
         contexte_bib, liste_sources = load_all_contexts("bibliotheque", choix_mat)
         contexte_exo = extract_pdf_text(doc_eleve) if doc_eleve else ""
 
+        # PROMPT RECENTRÉ SUR LA COMPLEXITÉ ET L'ANALYSE
         prompt = f"""
-        Tu es Joris, l'allié d'Anna (14 ans, artiste HPI). 
-        Tu respectes profondément le travail des créateurs humains.
+        Tu es Joris, l'allié intellectuel d'Anna (14 ans, 3ème, profil HPI). 
+        Anna est une artiste, mais elle n'a PAS besoin que tu lui demandes de créer des oeuvres. 
+        Elle a besoin que tu la stimules par la complexité, la logique et les liens entre les savoirs.
         
         MESSAGE D'ANNA : "{besoin_anna}"
         SÉANCE : {choix_chap} ({choix_mat}) | DURÉE : {duree}.
         
-        STRUCTURE :
-        1. **Accueil** : Réponds avec empathie à Anna.
-        2. **Le Sens** : Pourquoi ce sujet est fascinant ?
-        3. **Le Cours** : Basé sur ces documents : {contexte_bib}.
-        4. **Support Humain (Vidéo)** : Propose un titre de vidéo Lumni/YouTube précis.
-        5. **Défi de l'Artiste** : Exercice créatif manuel.
-        6. **Anecdote** : Le savais-tu ?
-        7. **Quiz Zen** : 3 questions de confiance.
-        8. **Sources & Crédits** : Cite explicitement les fichiers PDF utilisés ({', '.join(liste_sources)}) et nomme le créateur de la vidéo proposée.
+        STRUCTURE DE LA RÉPONSE (DENSE ET RICHE) :
+        1. **L'Origine et le Sens** : Pourquoi ce concept a-t-il été inventé ? Quel problème humain ou scientifique résout-il ? Fais des ponts avec d'autres matières.
+        2. **Analyse Approfondie (Le Cours)** : Développe les notions clés avec précision. Utilise les documents : {contexte_bib}. Ne simplifie pas les termes techniques.
+        3. **Ressource Humaine (Vidéo)** : Propose un documentaire, une conférence ou une expérience filmée (Lumni/YouTube). Donne le titre exact.
+        4. **L'Enquête de l'Esprit** : Propose un défi de réflexion pure ou d'analyse critique. (ex: "Compare deux théories", "Trouve l'erreur logique dans...", "Déduis la suite de ce raisonnement..."). Pas de dessin, pas de création.
+        5. **Le Point de Controverse** : Un fait historique ou scientifique méconnu, complexe, qui demande de l'esprit critique.
+        6. **### 📝 Quiz de Haute Fidélité** : 3 questions complexes qui vérifient la compréhension des mécanismes, pas juste le stockage d'infos.
+        7. **Sources & Crédits** : Liste les PDF utilisés ({', '.join(liste_sources)}) et les auteurs des ressources citées.
 
-        TON : Complice, stimulant, respectueux.
+        TON : Brillant, complice, tutoiement respectueux. Traite-la comme une adulte en devenir.
         """
         try:
             response = model.generate_content(prompt)
@@ -134,19 +127,19 @@ if 'resp_zen' in st.session_state:
 
 if 'resp' in st.session_state:
     st.divider()
-    st.subheader("✅ Ta progression")
+    st.subheader("✅ Suivi de ta séance")
     c1, c2, c3 = st.columns(3)
-    with c1: st.checkbox("Sujet exploré 🧭")
-    with c2: st.checkbox("Défi relevé 🎨")
-    with c3: st.checkbox("Quiz fini ✨")
+    with c1: st.checkbox("Concept maîtrisé 🧭")
+    with c2: st.checkbox("Enquête résolue 🧠")
+    with c3: st.checkbox("Quiz validé ✨")
     
     col_links = st.columns(2)
     with col_links[0]:
-        st.link_button("🔍 Chercher la vidéo humaine", f"https://www.youtube.com/results?search_query=3eme {choix_mat} {choix_chap}")
+        st.link_button("🔍 Explorer les sources humaines", f"https://www.youtube.com/results?search_query=3eme {choix_mat} {choix_chap}")
     with col_links[1]:
         try:
             pdf_bytes = create_pdf(st.session_state['resp'])
-            st.download_button("📥 Garder ma fiche (PDF)", data=pdf_bytes, file_name=f"Anna_{choix_mat}.pdf")
+            st.download_button("📥 Télécharger la fiche d'approfondissement (PDF)", data=pdf_bytes, file_name=f"Anna_{choix_mat}.pdf")
         except: st.warning("PDF indisponible.")
 
     st.markdown("---")
