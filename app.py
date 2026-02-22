@@ -2,22 +2,16 @@ import streamlit as st
 import pandas as pd
 import os
 import io
-import re
 from PyPDF2 import PdfReader
 import google.generativeai as genai
-from fpdf import FPDF
-import streamlit.components.v1 as components
 
-# --- 1. CONFIGURATION DE L'AGENT SPECIALISÉ ---
-
-# C'est ici que l'identité de Joris est scellée, hors de ton compte global.
+# --- 1. CONFIGURATION DE L'AGENT ---
 SYSTEM_PROMPT = """
-Tu es Joris, un agent expert en psycho-pédagogie pour Anna (14 ans, HPI, artiste). 
-Ton rôle est de la réconcilier avec les apprentissages par la densité et le sens.
-- Ton ton : Brillant, complice, tutoiement respectueux, jamais infantilisant.
-- Éthique : Tu es un curateur de savoirs humains. Cite les PDF et suggère des vidéos (Lumni/YouTube).
-- Visuel : Tu utilises le Markdown riche (# Titre, **gras**) et Mermaid pour structurer la pensée.
-- Pédagogie : Tu privilégies la complexité, les questions ouvertes (rédaction) et les schémas logiques.
+Tu es Joris, un psycho-pédagogue expert pour Anna (14 ans, HPI, déscolarisée). 
+Ton but est de lui redonner le goût d'apprendre par des séances denses et passionnantes.
+Tu tutoies Anna avec bienveillance et respect.
+Tu ne te contentes pas de résumer : tu expliques le SENS des choses en profondeur.
+Tu utilises les documents fournis MAIS tu complètes avec tes propres connaissances pour enrichir le cours.
 """
 
 st.set_page_config(page_title="L'Espace d'Anna", layout="wide")
@@ -27,32 +21,12 @@ if "GOOGLE_API_KEY" not in st.secrets:
     st.stop()
 
 genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-
-# Initialisation de l'agent dédié
 model = genai.GenerativeModel(
     model_name='gemini-2.5-flash',
     system_instruction=SYSTEM_PROMPT
 )
 
-# Gestion de l'état de la session
-if 'resp' not in st.session_state: st.session_state.resp = None
-if 'current_mat' not in st.session_state: st.session_state.current_mat = None
-if 'current_chap' not in st.session_state: st.session_state.current_chap = None
-
-# --- 2. FONCTIONS TECHNIQUES ---
-
-def render_mermaid(code):
-    """Affiche Mermaid avec un thème neutre par défaut."""
-    html = f"""
-    <div class="mermaid" style="background-color: white; padding: 10px;">
-        {code}
-    </div>
-    <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({{ startOnLoad: true, theme: 'neutral' }});
-    </script>
-    """
-    components.html(html, height=450, scrolling=True)
+# --- 2. FONCTIONS DE CHARGEMENT ---
 
 def load_context(folder, matiere):
     text = ""
@@ -67,83 +41,60 @@ def load_context(folder, matiere):
 
 # --- 3. INTERFACE ÉPURÉE ---
 
-st.title("🎓 Séance de Travail")
+st.title("📚 Séance d'Apprentissage")
 
 CSV_PATH = "bibliotheque/programme.csv"
 if os.path.exists(CSV_PATH):
     df = pd.read_csv(CSV_PATH, sep=",")
     df.columns = df.columns.str.strip()
-else: st.stop()
-
-if st.session_state.current_mat is None: st.session_state.current_mat = df["Matiere"].unique()[0]
+else:
+    st.error("Fichier programme.csv introuvable.")
+    st.stop()
 
 with st.sidebar:
-    st.header("📚 Programme")
-    choix_mat = st.selectbox("Matière :", df["Matiere"].unique(), 
-                             index=list(df["Matiere"].unique()).index(st.session_state.current_mat))
-    chapitres = df[df["Matiere"] == choix_mat]["Chapitre"].tolist()
-    choix_chap = st.radio("Chapitre :", chapitres)
-    st.session_state.current_mat, st.session_state.current_chap = choix_mat, choix_chap
+    st.header("📖 Programme")
+    matieres = df["Matiere"].unique()
+    choix_mat = st.selectbox("Choisir une matière :", matieres)
     
-    st.divider()
-    doc_eleve = st.file_uploader("📂 Document support (PDF)", type="pdf")
+    chapitres = df[df["Matiere"] == choix_mat]["Chapitre"].tolist()
+    choix_chap = st.radio("Sélectionner le chapitre :", chapitres)
 
-# --- 4. ESPACE DE TRAVAIL ---
+# --- 4. CŒUR DE LA SÉANCE ---
 
 st.subheader(f"📍 Sujet : {choix_chap}")
-besoin_anna = st.text_area("Anna, une question ou une envie particulière ?", height=80)
+besoin_anna = st.text_area("Coucou Anna, as-tu une question ou une envie particulière pour aujourd'hui ?", 
+                           placeholder="Ex: 'Je ne comprends pas l'utilité de ce cours' ou 'Peux-tu me donner des exemples concrets ?'",
+                           height=100)
 
 if st.button("🚀 Lancer la séance"):
-    with st.spinner("Joris prépare ton exploration..."):
-        contexte = load_context("bibliotheque", choix_mat)
+    with st.spinner("Joris prépare tes ressources..."):
+        contexte_pdf = load_context("bibliotheque", choix_mat)
         
-        # Le prompt utilisateur est désormais très simple
-        user_prompt = f"""
-        Sujet du jour : {choix_chap} (Matière : {choix_mat}).
-        Note d'Anna : {besoin_anna}.
-        Base de travail : {contexte}.
+        prompt = f"""
+        ANNA te demande de travailler sur : {choix_chap} (Matière : {choix_mat}).
+        Son message : "{besoin_anna}".
+        Contenu des PDF (à utiliser comme base) : {contexte_pdf}.
         
-        Produis la séance complète avec :
-        1. Accueil & Sens.
-        2. Exploration Approfondie (utilise le gras pour les concepts clés).
-        3. Lexique des Curieux (Format [MOT]: [DÉFINITION]).
-        4. Vidéo recommandée.
-        5. Atelier de Réflexion (2 questions ouvertes).
-        6. Architecture Logique (Mermaid).
-        7. Chronologie (Mermaid).
-        8. Quiz Flash (3 QCM).
-        9. RECO:[MATIERE]|[CHAPITRE].
+        DÉROULEMENT DE LA SÉANCE :
+        1. **L'essentiel du Cours** : Développe le sujet de manière riche et captivante. Utilise tes connaissances pour rendre le cours plus vivant que de simples notes. Mets en **gras** les concepts clés.
+        2. **La Minute Curiosité (Vidéo)** : Suggère un titre précis de vidéo (Lumni ou YouTube) pour illustrer le sujet.
+        3. **Les Exercices d'Application** : Propose 2 ou 3 exercices variés pour mettre en pratique ce qui vient d'être vu.
+        4. **Le Quiz de Fin** : 3 à 5 questions rapides pour vérifier que les points importants sont compris.
         """
+        
         try:
-            res = model.generate_content(user_prompt)
-            st.session_state.resp = res.text
-        except Exception as e: st.error(f"Erreur : {e}")
+            response = model.generate_content(prompt)
+            st.session_state['current_resp'] = response.text
+        except Exception as e:
+            st.error(f"Erreur technique : {e}")
 
-# --- 5. RÉSULTATS ---
+# --- 5. AFFICHAGE DU CONTENU ---
 
-if st.session_state.resp:
+if 'current_resp' in st.session_state:
     st.divider()
-    parts = re.split(r'(```mermaid.*?```|## Lexique des Curieux.*?\n\n)', st.session_state.resp, flags=re.DOTALL)
+    st.markdown(st.session_state['current_resp'])
     
-    for part in parts:
-        if part.startswith('```mermaid'):
-            m_code = part.replace('```mermaid', '').replace('```', '').strip()
-            with st.expander("🔍 Voir l'infographie", expanded=True):
-                render_mermaid(m_code)
-        elif "Lexique des Curieux" in part:
-            st.subheader("📖 Lexique des Curieux")
-            for line in part.split('\n'):
-                if ':' in line and '[' in line:
-                    t, d = line.split(':', 1)
-                    with st.expander(f"🔹 {t.strip(' []')}"): st.write(d.strip())
-        else:
-            st.markdown(re.sub(r'RECO:.*?\|.*', '', part))
-
-    # Navigation simplifiée
-    reco = re.search(r"RECO:(.*?)\|(.*)", st.session_state.resp)
-    if reco:
-        m, c = reco.group(1).strip(), reco.group(2).strip()
-        if st.button(f"➡️ Suivre le fil : {c}"):
-            st.session_state.current_mat, st.session_state.current_chap = m, c
-            st.session_state.resp = None
-            st.rerun()
+    # Option de téléchargement simple
+    st.download_button("📥 Garder cette séance en texte", 
+                       st.session_state['current_resp'], 
+                       file_name=f"Seance_{choix_chap}.txt")
